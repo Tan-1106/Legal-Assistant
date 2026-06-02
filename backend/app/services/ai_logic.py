@@ -1,6 +1,7 @@
 from app.config import settings
 
 import torch
+import nest_asyncio
 from llama_index.llms.ollama import Ollama
 from llama_index.core import Settings as LlamaIndexSettings
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
@@ -9,6 +10,7 @@ from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 # Initialize AI components (LLM, Embeddings, Vector Store) when FastAPI starts
 def initialize_ai():
     print("🚀 [AI Logic] Starting AI System initialization...")
+    nest_asyncio.apply()
 
     # 1. LLM Configuration (Qwen2.5:7b via Ollama)
     LlamaIndexSettings.llm = Ollama(

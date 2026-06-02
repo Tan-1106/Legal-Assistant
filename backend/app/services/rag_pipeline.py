@@ -1,10 +1,12 @@
 import os
-
 from app.config import settings
 from app.db.qdrant_store import init_qdrant_vector_store
 from llama_index.core.storage.docstore import SimpleDocumentStore
 from llama_index.core.node_parser import HierarchicalNodeParser, get_leaf_nodes
 from llama_index.core import SimpleDirectoryReader, StorageContext, VectorStoreIndex
+from llama_index.core.extractors import TitleExtractor, KeywordExtractor
+from llama_index.core.ingestion import IngestionPipeline
+from qdrant_client.http import models as qdrant_models
 
 
 # Function to ingest documents into the vector store index
@@ -21,40 +23,110 @@ def ingest_documents(data_path: str = None):
     documents = SimpleDirectoryReader(path).load_data()
     
     # Initialize the Hierarchical Node Parser
-    # Note: Using class method .from_defaults() and providing chunk_sizes list
     node_parser = HierarchicalNodeParser.from_defaults(
         chunk_sizes=[1024, 512, 128]
     )
     
-    # Parse documents into nodes
-    nodes = node_parser.get_nodes_from_documents(documents)
+    # Initialize Metadata Extractors (Runs on global LLM)
+    extractors = [
+        TitleExtractor(nodes=5),
+        KeywordExtractor(keywords=5)
+    ]
+    
+    # Run the Ingestion Pipeline
+    pipeline = IngestionPipeline(
+        transformations=[node_parser] + extractors
+    )
+    
+    print("Running Ingestion Pipeline (This may take a while due to metadata extraction)...")
+    nodes = pipeline.run(documents=documents)
     
     # Get leaf nodes for indexing
     leaf_nodes = get_leaf_nodes(nodes)
     
-    # Create a document store and add nodes to it
-    docstore = SimpleDocumentStore()
+    # Load or create document store
+    docstore_path = settings.DOCSTORE_PATH
+    if os.path.exists(docstore_path):
+        docstore = SimpleDocumentStore.from_persist_path(docstore_path)
+    else:
+        docstore = SimpleDocumentStore()
+        
     docstore.add_documents(nodes)
     
-    # Initialize the vector store and create the index
+    # Initialize the vector store
     vector_store = init_qdrant_vector_store()
     
-    # Create a storage context with the document store and vector store
+    # Create a storage context
     storage_context = StorageContext.from_defaults(
         docstore=docstore,
         vector_store=vector_store,
     )
     
-    # Create the vector store index using the leaf nodes and storage context
+    # Create the vector store index (This adds to Qdrant)
     index = VectorStoreIndex(
         leaf_nodes,
         storage_context=storage_context
     )
     
     # Persist the docstore for AutoMergingRetriever to use later
-    docstore_dir = os.path.dirname(settings.DOCSTORE_PATH)
+    docstore_dir = os.path.dirname(docstore_path)
     if docstore_dir:
         os.makedirs(docstore_dir, exist_ok=True)
-    docstore.persist(settings.DOCSTORE_PATH)
+    docstore.persist(docstore_path)
     
     return index
+
+
+def delete_document(filename: str):
+    """
+    Delete a document and its vectors from the system.
+    """
+    deleted_from_disk = False
+    file_path = os.path.join(settings.DATA_DIR, filename)
+    if os.path.exists(file_path):
+        os.remove(file_path)
+        deleted_from_disk = True
+
+    # 1. Delete from Qdrant by metadata filter
+    vector_store = init_qdrant_vector_store()
+    client = vector_store.client
+    collection_name = settings.QDRANT_COLLECTION_NAME
+    
+    try:
+        client.delete(
+            collection_name=collection_name,
+            points_selector=qdrant_models.Filter(
+                must=[
+                    qdrant_models.FieldCondition(
+                        key="file_name",
+                        match=qdrant_models.MatchValue(value=filename)
+                    )
+                ]
+            )
+        )
+    except Exception as e:
+        print(f"Warning: Failed to delete from Qdrant: {e}")
+
+    # 2. Delete from Local Docstore
+    docstore_path = settings.DOCSTORE_PATH
+    nodes_deleted = 0
+    if os.path.exists(docstore_path):
+        docstore = SimpleDocumentStore.from_persist_path(docstore_path)
+        
+        # Find all nodes related to this file
+        docs_to_delete = []
+        for doc_id, doc in docstore.docs.items():
+            if doc.metadata.get("file_name") == filename:
+                docs_to_delete.append(doc_id)
+                
+        for doc_id in docs_to_delete:
+            docstore.delete_document(doc_id)
+            nodes_deleted += 1
+            
+        if nodes_deleted > 0:
+            docstore.persist(docstore_path)
+
+    return {
+        "deleted_from_disk": deleted_from_disk,
+        "nodes_deleted_from_docstore": nodes_deleted
+    }
