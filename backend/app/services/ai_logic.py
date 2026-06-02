@@ -1,13 +1,13 @@
-import torch
 from app.config import settings
+
+import torch
 from llama_index.llms.ollama import Ollama
 from llama_index.core import Settings as LlamaIndexSettings
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 
+
+# Initialize AI components (LLM, Embeddings, Vector Store) when FastAPI starts
 def initialize_ai():
-    """
-    This function is called when FastAPI starts to load AI into memory.
-    """
     print("🚀 [AI Logic] Starting AI System initialization...")
 
     # 1. LLM Configuration (Qwen2.5:7b via Ollama)
@@ -30,5 +30,25 @@ def initialize_ai():
         device=device,
         trust_remote_code=True
     )
+    
+    # Patch position_ids buffer corruption issue due to transformers>=5.0 meta-device loading
+    try:
+        st_model = LlamaIndexSettings.embed_model._model
+        # SentenceTransformer wraps the HF Transformer module at index 0 or via _first_module()
+        transformer_module = st_model._first_module() if hasattr(st_model, "_first_module") else st_model[0]
+        hf_model = transformer_module.auto_model
+        
+        if hasattr(hf_model, "embeddings") and hasattr(hf_model.embeddings, "position_ids"):
+            embeddings = hf_model.embeddings
+            max_positions = embeddings.position_ids.size(0)
+            embeddings.register_buffer(
+                "position_ids",
+                torch.arange(max_positions, device=embeddings.position_ids.device),
+                persistent=False
+            )
+            print("🚀 [AI Logic] Successfully patched embedding model position_ids buffer.")
+    except Exception as e:
+        print(f"⚠️ [AI Logic] Failed to patch position_ids: {e}")
+        
     print(f"✅ [AI Logic] Loaded Embedding Model: {settings.EMBEDDING_MODEL} (Running on: {device.upper()})")
     print("==================================================")
