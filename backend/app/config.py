@@ -1,11 +1,15 @@
-from pathlib import Path
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pathlib            import Path
+from pydantic_settings  import BaseSettings, SettingsConfigDict
 
 # Resolve the absolute path to the project root directory where .env lives
 BASE_DIR = Path(__file__).resolve().parent.parent.parent  # Resolves to Legal Assistant/
 ENV_PATH = BASE_DIR / ".env"
 
 class Settings(BaseSettings):
+    """
+    Application configuration settings loaded from environment variables or .env file.
+    Provides typing and validation for environment variables used throughout the application.
+    """
     OLLAMA_BASE_URL: str
     OLLAMA_MODEL: str
     QDRANT_URL: str

@@ -1,13 +1,12 @@
-from app.config import settings
-
-from sqlalchemy import create_engine
-from sqlalchemy.orm import declarative_base, sessionmaker
+from app.config         import settings
+from sqlalchemy         import create_engine
+from sqlalchemy.orm     import declarative_base, sessionmaker
 
 # connect_args={"check_same_thread": False} is required only for SQLite
 connect_args = (
-    {"check_same_thread": False}
+    { "check_same_thread": False }
     if settings.DATABASE_URL.startswith("sqlite")
-    else {}
+    else { }
 )
 
 engine = create_engine(
@@ -20,7 +19,13 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 def get_db():
-    """FastAPI dependency to get database session."""
+    """
+    FastAPI dependency that provides a database session.
+    Yields the session and ensures it is closed after the request completes.
+
+    Yields:
+        Session: The SQLAlchemy database session.
+    """
     db = SessionLocal()
     try:
         yield db

@@ -1,48 +1,46 @@
-from sqlalchemy.orm import Session
-from fastapi.security import OAuth2PasswordRequestForm
-from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm             import Session
+from fastapi                    import HTTPException
+from fastapi                    import APIRouter, Depends, status
+from fastapi.security           import OAuth2PasswordRequestForm
+from app.models.all_models      import User
+from app.db.session             import get_db
+from app.schemas.auth           import UserRegister, Token, UserResponse
+from app.services.auth_service  import (register_user, authenticate_user, create_access_token, get_current_user)
 
-from app.db.session import get_db
-from app.models.all_models import User
-from app.schemas.auth import UserRegister, Token, UserResponse
-from app.services.auth_service import (
-    get_password_hash,
-    verify_password,
-    create_access_token,
-    get_current_user
-)
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
-
+# User registration endpoint
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def register(user_in: UserRegister, db: Session = Depends(get_db)):
-    """Register a new user account."""
-    # Check if username exists
-    existing_user = db.query(User).filter(User.username == user_in.username).first()
-    if existing_user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Username already registered"
-        )
-    
-    # Create user
-    new_user = User(
-        username=user_in.username,
-        hashed_password=get_password_hash(user_in.password)
-    )
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
-    return new_user
+    """
+    Register a new user account.
+
+    Args:
+        user_in (UserRegister): The registration payload containing username and password.
+        db (Session, optional): The database session dependency.
+
+    Returns:
+        UserResponse: The newly created user details.
+    """
+    return register_user(db, user_in)
 
 
+# User login endpoint to authenticate and return JWT token
 @router.post("/login", response_model=Token)
 def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    """Authenticate credentials and return a signed JWT token."""
-    # Authenticate user
-    user = db.query(User).filter(User.username == form_data.username).first()
-    if not user or not verify_password(form_data.password, user.hashed_password):
+    """
+    Authenticate credentials and return a signed JWT token.
+
+    Args:
+        form_data (OAuth2PasswordRequestForm, optional): Form data containing username and password.
+        db (Session, optional): The database session dependency.
+
+    Returns:
+        Token: A dictionary containing the access_token and token_type.
+    """
+    user = authenticate_user(db, form_data.username, form_data.password)
+    if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
@@ -54,7 +52,16 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     return {"access_token": access_token, "token_type": "bearer"}
 
 
+# Endpoint to get current user details using JWT token
 @router.get("/me", response_model=UserResponse)
 def get_me(current_user: User = Depends(get_current_user)):
-    """Fetch current logged-in user details."""
+    """
+    Fetch current logged-in user details.
+
+    Args:
+        current_user (User, optional): The authenticated user dependency.
+
+    Returns:
+        UserResponse: The current user's profile details.
+    """
     return current_user

@@ -1,50 +1,24 @@
 import os
 import shutil
-from typing import List
-from fastapi import APIRouter, UploadFile, File, HTTPException
-from app.schemas.chat import ChatRequest, ChatResponse, SourceNode
-from app.services.chat_engine import answer_legal_question
-from app.services.rag_pipeline import ingest_documents, delete_document
-from app.config import settings
-from app.api.auth import router as auth_router
-from app.api.sessions import router as session_router
-
-router = APIRouter()
-router.include_router(auth_router)
-router.include_router(session_router)
+from typing                     import List
+from fastapi                    import APIRouter, UploadFile, File, HTTPException
+from app.config                 import settings
+from app.services.rag_pipeline  import ingest_documents, delete_document
 
 
-
-@router.post("/chat", response_model=ChatResponse)
-def chat_endpoint(request: ChatRequest):
-    """
-    Process a legal question using the RAG pipeline and return the answer with sources.
-    """
-    try:
-        result = answer_legal_question(request.question)
-        
-        # Map the dictionary output to Pydantic models
-        sources = [
-            SourceNode(
-                score=source["score"],
-                text=source["text"],
-                metadata=source["metadata"]
-            )
-            for source in result["sources"]
-        ]
-        
-        return ChatResponse(
-            answer=result["answer"],
-            sources=sources
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+router = APIRouter(prefix="/documents", tags=["Documents & RAG"])
 
 
 @router.post("/ingest")
 def ingest_endpoint(files: List[UploadFile] = File(...)):
     """
     Upload legal documents, save them to DATA_DIR, and run the ingestion pipeline.
+
+    Args:
+        files (List[UploadFile]): A list of uploaded files to process.
+
+    Returns:
+        dict: A status dictionary containing the number of ingested files.
     """
     if not files:
         raise HTTPException(status_code=400, detail="No files provided")
@@ -72,11 +46,15 @@ def ingest_endpoint(files: List[UploadFile] = File(...)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# Manual synchronization and document deletion
 @router.post("/sync")
 def sync_endpoint():
     """
     Synchronize the vector database with all existing documents in the DATA_DIR.
     This is useful for manually placed files.
+
+    Returns:
+        dict: A status message detailing the sync result.
     """
     try:
         # Ensure data directory exists
@@ -101,10 +79,17 @@ def sync_endpoint():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.delete("/documents/{filename}")
+# Document deletion
+@router.delete("/{filename}")
 def delete_document_endpoint(filename: str):
     """
     Delete a document and its vectors from the system.
+
+    Args:
+        filename (str): The name of the file to delete.
+
+    Returns:
+        dict: A status dictionary detailing the deletion results.
     """
     try:
         result = delete_document(filename)

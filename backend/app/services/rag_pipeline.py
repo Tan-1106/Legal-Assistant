@@ -1,16 +1,27 @@
 import os
-from app.config import settings
-from app.db.qdrant_store import init_qdrant_vector_store
-from llama_index.core.storage.docstore import SimpleDocumentStore
-from llama_index.core.node_parser import HierarchicalNodeParser, get_leaf_nodes
-from llama_index.core import SimpleDirectoryReader, StorageContext, VectorStoreIndex
-from llama_index.core.extractors import TitleExtractor, KeywordExtractor
-from llama_index.core.ingestion import IngestionPipeline
-from qdrant_client.http import models as qdrant_models
+from qdrant_client.http                 import models as qdrant_models
+from llama_index.core.storage.docstore  import SimpleDocumentStore
+from llama_index.core.node_parser       import HierarchicalNodeParser, get_leaf_nodes
+from llama_index.core                   import SimpleDirectoryReader, StorageContext, VectorStoreIndex
+from llama_index.core.extractors        import TitleExtractor, KeywordExtractor
+from llama_index.core.ingestion         import IngestionPipeline
+from app.config                         import settings
+from app.db.qdrant_store                import init_qdrant_vector_store
 
 
-# Function to ingest documents into the vector store index
 def ingest_documents(data_path: str = None):
+    """
+    Ingests documents from a specified directory into the vector store and document store.
+    It reads documents, splits them hierarchically, extracts metadata (titles, keywords),
+    and saves leaf nodes to Qdrant.
+
+    Args:
+        data_path (str, optional): The directory path containing the source documents. 
+                                   Defaults to settings.DATA_DIR.
+
+    Returns:
+        VectorStoreIndex: The created or updated vector store index, or None if no documents found.
+    """
     # Determine the directory path
     path = data_path or settings.DATA_DIR
     
@@ -79,7 +90,14 @@ def ingest_documents(data_path: str = None):
 
 def delete_document(filename: str):
     """
-    Delete a document and its vectors from the system.
+    Deletes a document from the local disk, Qdrant vector store, and local Docstore.
+
+    Args:
+        filename (str): The name of the file to delete (e.g., 'document.pdf').
+
+    Returns:
+        dict: A status dictionary detailing whether the file was removed from disk
+              and the number of nodes deleted from the docstore.
     """
     deleted_from_disk = False
     file_path = os.path.join(settings.DATA_DIR, filename)

@@ -1,14 +1,17 @@
-from app.config import settings
-
 import torch
 import nest_asyncio
-from llama_index.llms.ollama import Ollama
-from llama_index.core import Settings as LlamaIndexSettings
-from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+from app.config                             import settings
+from llama_index.llms.ollama                import Ollama
+from llama_index.core                       import Settings as LlamaIndexSettings
+from llama_index.embeddings.huggingface     import HuggingFaceEmbedding
 
 
-# Initialize AI components (LLM, Embeddings, Vector Store) when FastAPI starts
 def initialize_ai():
+    """
+    Initialize AI components (LLM, Embeddings, Vector Store) when FastAPI starts.
+    Configures Ollama LLM and HuggingFace Embedding model. Also patches
+    a known position_ids buffer corruption issue in SentenceTransformers.
+    """
     print("🚀 [AI Logic] Starting AI System initialization...")
     nest_asyncio.apply()
 

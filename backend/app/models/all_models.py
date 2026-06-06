@@ -1,10 +1,14 @@
 import uuid
-from sqlalchemy import Column, String, Integer, DateTime, ForeignKey, Text
-from sqlalchemy.orm import relationship
-from datetime import datetime
-from app.db.session import Base
+from datetime           import datetime
+from sqlalchemy         import Column, String, Integer, DateTime, ForeignKey, Text
+from sqlalchemy.orm     import relationship
+from app.db.session     import Base
 
 class User(Base):
+    """
+    SQLAlchemy model representing a user in the system.
+    Stores the unique username and their bcrypt-hashed password.
+    """
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -16,6 +20,10 @@ class User(Base):
 
 
 class ChatSession(Base):
+    """
+    SQLAlchemy model representing a chat session.
+    Groups messages into a single conversational context, tracking ownership and timestamps.
+    """
     __tablename__ = "chat_sessions"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
@@ -29,6 +37,10 @@ class ChatSession(Base):
 
 
 class ChatMessage(Base):
+    """
+    SQLAlchemy model representing an individual message in a chat session.
+    Records the sender (user/assistant), message content, and retrieved sources (if any).
+    """
     __tablename__ = "chat_messages"
 
     id = Column(Integer, primary_key=True, index=True)

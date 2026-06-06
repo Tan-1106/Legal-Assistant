@@ -1,21 +1,31 @@
-from datetime import datetime, timedelta
-from typing import Optional
 import jwt
-from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
 import bcrypt
-from sqlalchemy.orm import Session
-
-from app.config import settings
-from app.db.session import get_db
-from app.models.all_models import User
+from typing                             import Optional
+from datetime                           import datetime, timedelta
+from sqlalchemy.orm                     import Session
+from fastapi                            import Depends, HTTPException, status
+from fastapi.security                   import OAuth2PasswordBearer
+from app.config                         import settings
+from app.db.session                     import get_db
+from app.models.all_models              import User
+from app.schemas.auth                   import UserRegister
+from app.repositories.user_repository   import UserRepository
 
 # JWT authentication configuration
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify standard text password against stored hash using bcrypt directly."""
+    """
+    Verify standard text password against stored hash using bcrypt directly.
+
+    Args:
+        plain_password (str): The raw text password.
+        hashed_password (str): The stored hashed password.
+
+    Returns:
+        bool: True if passwords match, False otherwise.
+    """
     try:
         password_bytes = plain_password.encode('utf-8')
         hashed_bytes = hashed_password.encode('utf-8')
@@ -25,16 +35,32 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 
 def get_password_hash(password: str) -> str:
-    """Generate bcrypt password hash from raw string using bcrypt directly."""
+    """
+    Generate bcrypt password hash from raw string using bcrypt directly.
+
+    Args:
+        password (str): The raw text password to hash.
+
+    Returns:
+        str: The bcrypt hash string.
+    """
     password_bytes = password.encode('utf-8')
     salt = bcrypt.gensalt()
     hashed_bytes = bcrypt.hashpw(password_bytes, salt)
     return hashed_bytes.decode('utf-8')
 
 
-
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
-    """Generate signed JWT token containing custom claims (username)."""
+    """
+    Generate signed JWT token containing custom claims (username).
+
+    Args:
+        data (dict): Data payload to embed in the token (e.g., {"sub": "username"}).
+        expires_delta (Optional[timedelta]): Custom expiration time. Defaults to ACCESS_TOKEN_EXPIRE_MINUTES.
+
+    Returns:
+        str: The signed JWT access token.
+    """
     to_encode = data.copy()
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
@@ -46,10 +72,63 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     return encoded_jwt
 
 
+def authenticate_user(db: Session, username: str, password: str) -> Optional[User]:
+    """
+    Authenticate a user by checking their username and password.
+
+    Args:
+        db (Session): The database session.
+        username (str): The username provided.
+        password (str): The password provided.
+
+    Returns:
+        Optional[User]: The authenticated User object if credentials are valid, otherwise None.
+    """
+    user = UserRepository.get_by_username(db, username)
+    if not user:
+        return None
+    if not verify_password(password, user.hashed_password):
+        return None
+    return user
+
+
+def register_user(db: Session, user_in: UserRegister) -> User:
+    """
+    Registers a new user after verifying the username is unique.
+
+    Args:
+        db (Session): The database session.
+        user_in (UserRegister): Registration data (username and password).
+
+    Returns:
+        User: The newly created User object.
+        
+    Raises:
+        HTTPException: If the username is already registered.
+    """
+    existing_user = UserRepository.get_by_username(db, user_in.username)
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username already registered"
+        )
+    return UserRepository.create(db, user_in)
+
+
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
     """
     FastAPI dependency to extract JWT from request header, validate claims,
     and fetch the authenticated User object from the database.
+
+    Args:
+        token (str): The extracted JWT from the Authorization header.
+        db (Session): The database session.
+
+    Returns:
+        User: The currently authenticated User object.
+        
+    Raises:
+        HTTPException: If the token is invalid, expired, or the user does not exist.
     """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -64,7 +143,7 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     except jwt.PyJWTError:
         raise credentials_exception
         
-    user = db.query(User).filter(User.username == username).first()
+    user = UserRepository.get_by_username(db, username)
     if user is None:
         raise credentials_exception
     return user
