@@ -112,7 +112,8 @@ def register_user(db: Session, user_in: UserRegister) -> User:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Username already registered"
         )
-    return UserRepository.create(db, user_in)
+    hashed_password = get_password_hash(user_in.password)
+    return UserRepository.create(db, username=user_in.username, hashed_password=hashed_password)
 
 
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:

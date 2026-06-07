@@ -2,7 +2,6 @@ from typing                         import Optional
 from sqlalchemy.orm                 import Session
 from app.models.all_models          import User
 from app.schemas.auth               import UserRegister
-from app.services.auth_service      import get_password_hash
 
 class UserRepository:
     """
@@ -24,20 +23,21 @@ class UserRepository:
         return db.query(User).filter(User.username == username).first()
 
     @staticmethod
-    def create(db: Session, user_in: UserRegister) -> User:
+    def create(db: Session, username: str, hashed_password: str) -> User:
         """
-        Creates a new user in the database with a hashed password.
+        Creates a new user in the database with a pre-hashed password.
 
         Args:
             db (Session): The database session.
-            user_in (UserRegister): The user registration payload containing username and raw password.
+            username (str): The username of the user.
+            hashed_password (str): The pre-hashed password.
 
         Returns:
             User: The newly created User object.
         """
         new_user = User(
-            username=user_in.username,
-            hashed_password=get_password_hash(user_in.password)
+            username=username,
+            hashed_password=hashed_password
         )
         db.add(new_user)
         db.commit()

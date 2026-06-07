@@ -60,6 +60,8 @@ def create_global_chat_engine() -> ContextChatEngine:
 def get_global_chat_engine(request: Request) -> ContextChatEngine:
     """
     FastAPI Dependency to retrieve the pre-initialized chat engine.
+    Also dynamically checks if Qdrant collection is created after startup
+    and runs format detection to avoid stale 'text-dense' named vector query errors.
 
     Args:
         request (Request): The incoming FastAPI request containing app state.
@@ -67,4 +69,26 @@ def get_global_chat_engine(request: Request) -> ContextChatEngine:
     Returns:
         ContextChatEngine: The global chat engine instance.
     """
-    return request.app.state.chat_engine
+    chat_engine = request.app.state.chat_engine
+    
+    # Safely extract retriever and vector store to refresh format detection
+    retriever = getattr(chat_engine, "_retriever", None)
+    if retriever:
+        storage_context = getattr(retriever, "_storage_context", None)
+        if storage_context:
+            vector_store = getattr(storage_context, "vector_store", None)
+            if vector_store and not getattr(vector_store, "_collection_initialized", False):
+                client = getattr(vector_store, "_client", None)
+                collection_name = getattr(vector_store, "collection_name", None)
+                if client and collection_name:
+                    try:
+                        # If collection is now created in Qdrant, detect the vector format
+                        if client.collection_exists(collection_name):
+                            vector_store._collection_initialized = True
+                            if hasattr(vector_store, "_detect_vector_format"):
+                                vector_store._detect_vector_format(collection_name)
+                                print("🚀 [AI Logic] Dynamically detected Qdrant vector format on query.")
+                    except Exception as e:
+                        print(f"⚠️ [AI Logic] Failed to dynamically detect vector format: {e}")
+                        
+    return chat_engine

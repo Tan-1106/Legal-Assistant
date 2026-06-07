@@ -1,3 +1,11 @@
+import sys
+# Reconfigure stdout to support UTF-8 printing (e.g. emojis) on Windows terminal
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
+
 from fastapi                    import FastAPI
 from fastapi.middleware.cors    import CORSMiddleware
 from contextlib                 import asynccontextmanager

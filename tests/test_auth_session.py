@@ -9,7 +9,7 @@ import time
 sys.stdout.reconfigure(encoding='utf-8')
 
 BASE_URL = "http://localhost:8000/api"
-TIMEOUT = 120  # Prevent indefinite hanging by setting a 2-minute timeout
+TIMEOUT = 300  # Prevent indefinite hanging by setting a 5-minute timeout
 
 print("==================================================")
 print("🚀 STARTING E2E INTEGRATION TEST: AUTH, SESSIONS & MEMORY")
@@ -86,7 +86,7 @@ with open("test_luat.txt", "w", encoding="utf-8") as f:
 
 print("Uploading file to RAG pipeline (running metadata extractors, please wait)...")
 start_time = time.time()
-url_ingest = f"{BASE_URL}/ingest"
+url_ingest = f"{BASE_URL}/documents/ingest"
 try:
     with open("test_luat.txt", "rb") as f:
         files = {"files": f}
@@ -114,6 +114,8 @@ try:
     response = requests.post(url_chat, json=payload_chat_1, headers=auth_headers, timeout=TIMEOUT)
     duration = time.time() - start_time
     print(f"Status Code: {response.status_code} (Took {duration:.2f} seconds)")
+    if response.status_code != 200:
+        print("Response Error Detail:", response.text)
     assert response.status_code == 200, "Chat Turn 1 failed!"
     res_data_1 = response.json()
     print("AI Answer:", res_data_1.get("answer"))

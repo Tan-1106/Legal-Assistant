@@ -30,8 +30,11 @@ def ingest_documents(data_path: str = None):
         print(f"No documents found in {path}. Please add documents to ingest.")
         return
     
-    # Load documents from the specified directory
-    documents = SimpleDirectoryReader(path).load_data()
+    # Load documents from the specified directory (only matching document formats, ignoring db.sqlite3)
+    documents = SimpleDirectoryReader(
+        path,
+        required_exts=[".pdf", ".txt", ".docx", ".doc"]
+    ).load_data()
     
     # Initialize the Hierarchical Node Parser
     node_parser = HierarchicalNodeParser.from_defaults(
