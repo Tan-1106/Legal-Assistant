@@ -3,7 +3,7 @@ import { useAuth } from '../context/auth';
 import { API_BASE_URL } from '../config';
 import Sidebar from '../components/Sidebar';
 import { useChatStream, type SourceNode } from '../hooks/useChatStream';
-import { Send, FileText, Scale, Menu, Square, Loader2 } from 'lucide-react';
+import { Send, FileText, Scale, Menu, Square, Loader2, X, ExternalLink } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { parseMessages } from '../utils/validation';
@@ -25,6 +25,8 @@ export default function ChatDashboard() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [sessionsVersion, setSessionsVersion] = useState(0);
+  const [selectedPdfUrl, setSelectedPdfUrl] = useState<string | null>(null);
+  const [selectedPdfTitle, setSelectedPdfTitle] = useState<string>('');
   const { sendMessage, isStreaming, cancelStream } = useChatStream();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -169,12 +171,17 @@ export default function ChatDashboard() {
 
   const handleOpenSource = (filename: string, pageLabel: string | number) => {
     let docUrl = `${API_BASE_URL}/documents/file/${encodeURIComponent(filename)}`;
-    if (filename.toLowerCase().endsWith('.pdf') && pageLabel && pageLabel !== 'N/A') {
-      docUrl += `#page=${pageLabel}`;
-    }
-    const previewWindow = window.open(docUrl, '_blank', 'noopener,noreferrer');
-    if (!previewWindow) {
-      setError('Trình duyệt đã chặn popup. Vui lòng cho phép popup để xem tài liệu.');
+    if (filename.toLowerCase().endsWith('.pdf')) {
+      if (pageLabel && pageLabel !== 'N/A') {
+        docUrl += `#page=${pageLabel}`;
+      }
+      setSelectedPdfUrl(docUrl);
+      setSelectedPdfTitle(filename);
+    } else {
+      const previewWindow = window.open(docUrl, '_blank', 'noopener,noreferrer');
+      if (!previewWindow) {
+        setError('Trình duyệt đã chặn popup. Vui lòng cho phép popup để xem tài liệu.');
+      }
     }
   };
 
@@ -355,6 +362,41 @@ export default function ChatDashboard() {
           </p>
         </div>
       </div>
+
+      {/* PDF Viewer Pane */}
+      {selectedPdfUrl && (
+        <div className="pdf-viewer-pane">
+          <div className="pdf-header">
+            <span className="pdf-title" title={selectedPdfTitle}>{selectedPdfTitle}</span>
+            <div className="pdf-actions">
+              <button
+                type="button"
+                className="btn btn-ghost icon-button"
+                aria-label="Mở ở tab mới"
+                onClick={() => {
+                  window.open(selectedPdfUrl, '_blank', 'noopener,noreferrer');
+                  setSelectedPdfUrl(null);
+                }}
+              >
+                <ExternalLink size={16} />
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost icon-button"
+                aria-label="Đóng tài liệu"
+                onClick={() => setSelectedPdfUrl(null)}
+              >
+                <X size={16} />
+              </button>
+            </div>
+          </div>
+          <iframe
+            src={selectedPdfUrl}
+            className="pdf-iframe"
+            title="Trình xem PDF"
+          />
+        </div>
+      )}
     </div>
   );
 }

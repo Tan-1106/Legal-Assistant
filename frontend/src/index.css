@@ -522,7 +522,7 @@ textarea:focus-visible,
   max-width: 52rem;
   margin: 0 auto;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   gap: 0.5rem;
   background: var(--bg-raised);
   border: 1px solid var(--border);
@@ -1271,4 +1271,68 @@ textarea:focus-visible,
 
 @media (max-width: 480px) {
   .message-bubble { max-width: calc(100% - 44px); }
+}
+
+/* ── PDF Viewer Pane ── */
+.pdf-viewer-pane {
+  display: flex;
+  flex-direction: column;
+  width: 50%;
+  max-width: 800px;
+  min-width: 320px;
+  background: var(--bg-surface);
+  border-left: 1px solid var(--border);
+  height: 100%;
+  flex-shrink: 0;
+  transition: width 0.3s ease;
+}
+
+.pdf-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  background: var(--bg-raised);
+  border-bottom: 1px solid var(--border);
+  height: 3.25rem;
+}
+
+.pdf-header .pdf-title {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pdf-header .pdf-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.pdf-iframe {
+  flex: 1;
+  width: 100%;
+  border: none;
+  background: #f0f0f0; /* Default background for PDF iframe */
+}
+
+@media (max-width: 1024px) {
+  .pdf-viewer-pane {
+    width: 40%;
+  }
+}
+
+@media (max-width: 768px) {
+  .pdf-viewer-pane {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    max-width: 100%;
+    z-index: 100;
+  }
 }
