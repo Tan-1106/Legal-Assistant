@@ -118,28 +118,6 @@ embeddings, queues, and model caches remain under your infrastructure.
 - RQ retries, job timeouts, result retention, and failed-job retention.
 - Nginx CSP, frame, content-type, referrer, and permissions headers.
 
-### Main Chat Flow
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant React
-    participant API as FastAPI
-    participant Retriever as LlamaIndex + Qdrant
-    participant LLM as Ollama
-    participant DB as SQLite
-
-    User->>React: Submit a question
-    React->>API: POST /sessions/{id}/chat
-    API->>DB: Load session and recent history
-    API->>Retriever: Retrieve and auto-merge document context
-    Retriever-->>API: Ranked source nodes
-    API->>LLM: Question + history + retrieved context
-    LLM-->>React: Stream answer tokens via SSE
-    API->>DB: Persist question, answer, and sources
-    API-->>React: Source metadata + DONE event
-```
-
 ## Technology Stack
 
 | Layer | Technologies |
