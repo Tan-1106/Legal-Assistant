@@ -118,28 +118,6 @@ embeddings, queues, and model caches remain under your infrastructure.
 - RQ retries, job timeouts, result retention, and failed-job retention.
 - Nginx CSP, frame, content-type, referrer, and permissions headers.
 
-## Architecture
-
-```mermaid
-flowchart LR
-    U[Browser] -->|Same-origin HTTP/SSE| N[Nginx + React SPA]
-    N -->|/api| A[FastAPI API]
-
-    A --> SQL[(SQLite)]
-    A --> R[(Redis)]
-    A --> Q[(Qdrant)]
-    A --> O[Ollama]
-    A -->|Enqueue ingestion| W[RQ Worker]
-
-    W --> R
-    W --> Q
-    W --> D[(Document + Docstore Storage)]
-    W --> E[Hugging Face Embeddings]
-
-    A --> D
-    O --> A
-```
-
 ### Main Chat Flow
 
 ```mermaid
