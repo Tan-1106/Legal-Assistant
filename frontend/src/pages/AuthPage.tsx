@@ -5,8 +5,10 @@ import { API_BASE_URL } from '../config';
 import { Scale, Eye, EyeOff, ArrowRight, Loader2 } from 'lucide-react';
 import { fetchWithTimeout } from '../utils/api';
 import { parseUser } from '../utils/validation';
+import { useTranslation } from 'react-i18next';
 
 export default function AuthPage() {
+  const { t } = useTranslation();
   const [isLogin, setIsLogin] = useState(true);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -17,8 +19,8 @@ export default function AuthPage() {
   const { user, login } = useAuth();
 
   useEffect(() => {
-    document.title = isLogin ? 'Đăng Nhập - Trợ Lý Pháp Lý' : 'Đăng Ký - Trợ Lý Pháp Lý';
-  }, [isLogin]);
+    document.title = isLogin ? t('auth.login_title') : t('auth.register_title');
+  }, [isLogin, t]);
 
   if (user) {
     return <Navigate to="/" replace />;
@@ -45,12 +47,12 @@ export default function AuthPage() {
 
         if (res.status === 429) {
           const retryAfter = res.headers.get('Retry-After');
-          throw new Error(`Thử đăng nhập lại sau ${retryAfter ?? 'một lúc'} giây.`);
+          throw new Error(t('auth.retry_wait', { time: retryAfter ?? '10' }));
         }
-        if (!res.ok) throw new Error('Sai tài khoản hoặc mật khẩu');
+        if (!res.ok) throw new Error(t('auth.err_wrong_creds'));
         const userData: User = parseUser(await res.json());
         const csrfToken = res.headers.get('X-CSRF-Token');
-        if (!csrfToken) throw new Error('Phản hồi đăng nhập thiếu CSRF token');
+        if (!csrfToken) throw new Error(t('auth.err_no_csrf'));
         login(userData, csrfToken);
       } else {
         const res = await fetchWithTimeout(`${API_BASE_URL}/auth/register`, {
@@ -62,16 +64,16 @@ export default function AuthPage() {
 
         if (res.status === 429) {
           const retryAfter = res.headers.get('Retry-After');
-          throw new Error(`Thử đăng ký lại sau ${retryAfter ?? 'một lúc'} giây.`);
+          throw new Error(t('auth.retry_wait', { time: retryAfter ?? '10' }));
         }
-        if (!res.ok) throw new Error('Tài khoản đã tồn tại hoặc có lỗi xảy ra');
+        if (!res.ok) throw new Error(t('auth.err_exists'));
 
         setIsLogin(true);
         setIsSuccess(true);
-        setError('Đăng ký thành công! Hãy đăng nhập.');
+        setError(t('auth.success_register'));
       }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Có lỗi xảy ra');
+      setError(err instanceof Error ? err.message : t('auth.err_general'));
       setIsSuccess(false);
     } finally {
       setIsSubmitting(false);
@@ -88,15 +90,15 @@ export default function AuthPage() {
           </div>
           <div>
             <h1 className="auth-title">
-              {isLogin ? 'Đăng nhập hệ thống' : 'Tạo tài khoản'}
+              {isLogin ? t('auth.login_heading') : t('auth.register_heading')}
             </h1>
-            <p className="auth-subtitle">Nền tảng AI tư vấn pháp luật Việt Nam</p>
+            <p className="auth-subtitle">{t('auth.subtitle')}</p>
           </div>
         </div>
 
         <form onSubmit={handleSubmit} className="auth-form" id="auth-form">
           <div className="auth-field">
-            <label htmlFor="auth-username" className="input-label">Tài khoản</label>
+            <label htmlFor="auth-username" className="input-label">{t('auth.username')}</label>
             <input
               id="auth-username"
               className="input"
@@ -107,13 +109,13 @@ export default function AuthPage() {
               autoComplete="username"
               value={username}
               onChange={e => setUsername(e.target.value)}
-              placeholder="Nhập tên đăng nhập"
+              placeholder={t('auth.username_placeholder')}
               disabled={isSubmitting}
             />
           </div>
 
           <div className="auth-field">
-            <label htmlFor="auth-password" className="input-label">Mật khẩu</label>
+            <label htmlFor="auth-password" className="input-label">{t('auth.password')}</label>
             <div className="auth-password-wrap">
               <input
                 id="auth-password"
@@ -125,14 +127,14 @@ export default function AuthPage() {
                 autoComplete={isLogin ? 'current-password' : 'new-password'}
                 value={password}
                 onChange={e => setPassword(e.target.value)}
-                placeholder="••••••••"
+                placeholder={t('auth.password_placeholder')}
                 disabled={isSubmitting}
               />
               <button
                 type="button"
                 className="auth-eye-btn"
                 onClick={() => setShowPassword(!showPassword)}
-                aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+                aria-label={showPassword ? t('auth.hide_password') : t('auth.show_password')}
               >
                 {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
               </button>
@@ -156,9 +158,9 @@ export default function AuthPage() {
             id="auth-submit-btn"
           >
             {isSubmitting ? (
-              <><Loader2 size={16} className="spin" /> Đang xử lý...</>
+              <><Loader2 size={16} className="spin" /> {t('auth.processing')}</>
             ) : (
-              <>{isLogin ? 'Đăng nhập' : 'Tạo tài khoản'} <ArrowRight size={16} /></>
+              <>{isLogin ? t('auth.btn_login') : t('auth.btn_register')} <ArrowRight size={16} /></>
             )}
           </button>
         </form>
@@ -170,7 +172,7 @@ export default function AuthPage() {
             disabled={isSubmitting}
             onClick={() => { setIsLogin(!isLogin); setError(''); setIsSuccess(false); setShowPassword(false); }}
           >
-            {isLogin ? 'Chưa có tài khoản? Đăng ký ngay →' : 'Đã có tài khoản? Đăng nhập →'}
+            {isLogin ? t('auth.no_account') : t('auth.has_account')}
           </button>
         </div>
       </div>

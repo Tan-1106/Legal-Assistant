@@ -12,6 +12,7 @@ import {
   UPLOAD_TIMEOUT_MS,
 } from '../config';
 import { useAuth } from '../context/auth';
+import { useTranslation } from 'react-i18next';
 
 // ── Types ──
 interface Task {
@@ -92,6 +93,7 @@ interface PasswordModalProps {
 }
 
 function PasswordModal({ title, description, onConfirm, onCancel }: PasswordModalProps) {
+  const { t } = useTranslation();
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -108,7 +110,7 @@ function PasswordModal({ title, description, onConfirm, onCancel }: PasswordModa
     try {
       await onConfirm(password);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Xác minh thất bại');
+      setError(err instanceof Error ? err.message : t('admin.verification_failed'));
     } finally {
       setIsLoading(false);
     }
@@ -134,7 +136,7 @@ function PasswordModal({ title, description, onConfirm, onCancel }: PasswordModa
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
           <div>
-            <label className="input-label" htmlFor="danger-password">Nhập mật khẩu Admin để xác nhận</label>
+            <label className="input-label" htmlFor="danger-password">{t('admin.enter_admin_password')}</label>
             <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
               <input
                 ref={inputRef}
@@ -164,9 +166,9 @@ function PasswordModal({ title, description, onConfirm, onCancel }: PasswordModa
           )}
 
           <div className="dialog-actions">
-            <button type="button" className="btn btn-ghost" onClick={onCancel} disabled={isLoading}>Hủy</button>
+            <button type="button" className="btn btn-ghost" onClick={onCancel} disabled={isLoading}>{t('common.cancel')}</button>
             <button type="submit" className="btn btn-danger" disabled={!password.trim() || isLoading}>
-              {isLoading ? <><Loader2 size={14} className="spin" /> Đang xử lý...</> : 'Xác nhận xóa'}
+              {isLoading ? <><Loader2 size={14} className="spin" /> {t('auth.processing')}</> : t('admin.confirm_delete')}
             </button>
           </div>
         </form>
@@ -177,7 +179,8 @@ function PasswordModal({ title, description, onConfirm, onCancel }: PasswordModa
 
 // ── Main Page ──
 export default function AdminDocumentsPage() {
-  const { user, apiFetch } = useAuth();
+  const { t } = useTranslation();
+  const { apiFetch, user } = useAuth();
   const navigate = useNavigate();
   const username = user?.username ?? 'anonymous';
   const [tasks, setTasks] = useState<Task[]>(() => loadStoredTasks(username));
@@ -220,7 +223,7 @@ export default function AdminDocumentsPage() {
             setTasks(previous => previous.map(item => item.task_id === taskId ? taskFromResponse(data, item) : item));
           } else if (response.status === 404) {
             setTasks(previous => previous.map(item =>
-              item.task_id === taskId ? { ...item, status: 'failed', error: 'Job đã hết hạn.', updated_at: Date.now() } : item
+              item.task_id === taskId ? { ...item, status: 'failed', error: t('admin.job_expired'), updated_at: Date.now() } : item
             ));
           }
         } catch (pollError) {
@@ -261,9 +264,9 @@ export default function AdminDocumentsPage() {
     const oversized = selectedFiles.filter(f => f.size > UPLOAD_MAX_FILE_BYTES);
     const totalBytes = selectedFiles.reduce((sum, f) => sum + f.size, 0);
 
-    if (selectedFiles.length > UPLOAD_MAX_FILES) { setError(`Tối đa ${UPLOAD_MAX_FILES} tệp/lần.`); return; }
-    if (unsupported.length > 0) { setError(`Không hỗ trợ: ${unsupported.map(f => f.name).join(', ')}`); return; }
-    if (oversized.length > 0 || totalBytes > UPLOAD_MAX_TOTAL_BYTES) { setError('Tệp vượt quá giới hạn 10 MB/tệp hoặc 50 MB/tổng.'); return; }
+    if (selectedFiles.length > UPLOAD_MAX_FILES) { setError(t('admin.err_max_files', { count: UPLOAD_MAX_FILES })); return; }
+    if (unsupported.length > 0) { setError(t('admin.err_unsupported_files', { files: unsupported.map(f => f.name).join(', ') })); return; }
+    if (oversized.length > 0 || totalBytes > UPLOAD_MAX_TOTAL_BYTES) { setError(t('admin.err_file_limits')); return; }
 
     setIsUploading(true);
     setError('');
@@ -276,15 +279,15 @@ export default function AdminDocumentsPage() {
       });
       if (!response.ok) {
         const detail = await response.json().catch(() => null) as { detail?: string } | null;
-        throw new Error(detail?.detail ?? `Tải tài liệu thất bại (${response.status}).`);
+        throw new Error(detail?.detail ?? t('admin.err_status_code', { status: response.status }));
       }
       const data = await response.json() as Record<string, unknown>;
-      if (typeof data.task_id !== 'string' || !Array.isArray(data.files)) throw new Error('Phản hồi enqueue không hợp lệ.');
+      if (typeof data.task_id !== 'string' || !Array.isArray(data.files)) throw new Error(t('admin.err_invalid_enqueue'));
       const queuedTask: Task = { task_id: data.task_id as string, type: 'ingest', status: 'queued', meta: { files: data.files as string[] }, updated_at: Date.now() };
       setTasks(previous => [queuedTask, ...previous].slice(0, 50));
       void loadDocuments();
     } catch (uploadError) {
-      setError(uploadError instanceof Error ? uploadError.message : 'Không thể tải tài liệu.');
+      setError(uploadError instanceof Error ? uploadError.message : t('admin.err_cannot_upload'));
     } finally {
       setIsUploading(false);
     }
@@ -308,10 +311,10 @@ export default function AdminDocumentsPage() {
     setDeletingFile(filename);
     try {
       const res = await apiFetch(`${API_BASE_URL}/documents/${encodeURIComponent(filename)}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error(`Xóa thất bại (${res.status})`);
+      if (!res.ok) throw new Error(t('admin.err_delete_failed', { status: res.status }));
       setDocuments(prev => prev.filter(d => d.filename !== filename));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Không thể xóa tài liệu.');
+      setError(err instanceof Error ? err.message : t('admin.err_cannot_delete'));
     } finally {
       setDeletingFile(null);
     }
@@ -325,7 +328,7 @@ export default function AdminDocumentsPage() {
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({})) as { detail?: string };
-      throw new Error(body.detail ?? `Lỗi ${res.status}`);
+      throw new Error(body.detail ?? t('admin.err_status_code', { status: res.status }));
     }
     setDocuments([]);
     setPasswordModal(null);
@@ -339,13 +342,13 @@ export default function AdminDocumentsPage() {
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({})) as { detail?: string };
-      throw new Error(body.detail ?? `Lỗi ${res.status}`);
+      throw new Error(body.detail ?? t('admin.err_status_code', { status: res.status }));
     }
     setPasswordModal(null);
   };
 
   if (user?.role !== 'admin') {
-    return <div className="p-4 text-center" role="alert">Bạn không có quyền truy cập trang này.</div>;
+    return <div className="p-4 text-center" role="alert">{t('admin.err_unauthorized')}</div>;
   }
 
   return (
@@ -356,7 +359,7 @@ export default function AdminDocumentsPage() {
           <button
             onClick={() => navigate('/')}
             className="btn btn-ghost icon-button"
-            aria-label="Quay lại"
+            aria-label={t('admin.aria_back')}
             id="admin-back-btn"
           >
             <ArrowLeft size={18} />
@@ -365,8 +368,8 @@ export default function AdminDocumentsPage() {
             <Database size={20} color="#fff" strokeWidth={1.5} />
           </div>
           <div>
-            <h1 className="admin-title">Quản trị Tài liệu</h1>
-            <p className="admin-subtitle">Quản lý cơ sở dữ liệu pháp luật RAG</p>
+            <h1 className="text-xl font-bold">{t('admin.title')}</h1>
+            <p className="text-sm text-faint mt-1">{t('admin.subtitle')}</p>
           </div>
         </div>
         <button
@@ -375,7 +378,7 @@ export default function AdminDocumentsPage() {
           id="admin-refresh-btn"
         >
           <RefreshCw size={15} />
-          <span>Tải lại</span>
+          <span>{t('admin.btn_reload')}</span>
         </button>
       </div>
 
@@ -385,7 +388,7 @@ export default function AdminDocumentsPage() {
           <div className="admin-card-header">
             <span className="admin-card-title">
               <UploadCloud size={16} />
-              Tải tài liệu mới
+              {t('admin.upload_btn')}
             </span>
           </div>
           <div className="admin-card-body">
@@ -405,17 +408,17 @@ export default function AdminDocumentsPage() {
               {isUploading ? (
                 <div className="flex flex-col items-center gap-3">
                   <Loader2 size={36} className="spin" style={{ color: 'var(--brown-400)' }} />
-                  <p className="text-sm font-medium">Đang tải lên...</p>
+                  <p className="text-sm font-medium">{t('admin.upload_processing')}</p>
                 </div>
               ) : (
                 <div className="flex flex-col items-center gap-3">
                   <UploadCloud size={36} className="text-faint" />
                   <div>
-                    <p className="font-medium" style={{ color: 'var(--text)' }}>Kéo thả tệp vào đây</p>
-                    <p className="text-sm text-muted mt-1">hoặc nhấn để chọn tệp</p>
+                    <p className="font-medium" style={{ color: 'var(--text)' }}>{t('admin.drag_drop')}</p>
+                    <p className="text-sm text-muted mt-1">{t('admin.click_browse')}</p>
                   </div>
-                  <div className="btn btn-primary pointer-events-none">Chọn tệp</div>
-                  <p className="text-xs text-faint">PDF, DOCX, TXT • Tối đa {UPLOAD_MAX_FILES} tệp • 10 MB/tệp • 50 MB/lần</p>
+                  <div className="btn btn-primary pointer-events-none">{t('admin.select_file')}</div>
+                  <p className="text-xs text-faint">{t('admin.upload_rules')}</p>
                 </div>
               )}
             </label>
@@ -431,7 +434,7 @@ export default function AdminDocumentsPage() {
           <div className="admin-card-header">
             <span className="admin-card-title">
               <FileText size={16} />
-              Danh sách tài liệu ({documents.length})
+              {t('admin.doc_list', { count: documents.length })}
             </span>
           </div>
           <div className="doc-table-wrap">
@@ -439,17 +442,17 @@ export default function AdminDocumentsPage() {
               <div className="admin-card-body">
                 <div className="flex flex-col items-center gap-2 py-6 text-center">
                   <FileText size={28} className="text-faint" />
-                  <p className="text-sm text-muted">Chưa có tài liệu nào trong hệ thống.</p>
+                  <p className="text-sm text-muted">{t('admin.empty')}</p>
                 </div>
               </div>
             ) : (
               <table className="doc-table">
                 <thead>
                   <tr>
-                    <th>Tên tài liệu</th>
-                    <th>Loại</th>
-                    <th>Kích thước</th>
-                    <th style={{ textAlign: 'right' }}>Hành động</th>
+                    <th>{t('admin.col_name')}</th>
+                    <th>{t('admin.col_type')}</th>
+                    <th>{t('admin.col_size')}</th>
+                    <th style={{ textAlign: 'right' }}>{t('admin.col_action')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -476,9 +479,8 @@ export default function AdminDocumentsPage() {
                           id={`delete-doc-${doc.filename}`}
                         >
                           {deletingFile === doc.filename
-                            ? <Loader2 size={13} className="spin" />
-                            : <Trash2 size={13} />}
-                          <span>Xóa</span>
+                            ? t('admin.deleting')
+                            : <><Trash2 size={13} /> {t('admin.btn_delete')}</>}
                         </button>
                       </td>
                     </tr>
@@ -495,7 +497,7 @@ export default function AdminDocumentsPage() {
             <div className="admin-card-header">
               <span className="admin-card-title">
                 <Loader2 size={16} />
-                Tiến trình xử lý nền
+                {t('admin.bg_tasks')}
               </span>
             </div>
             <div className="admin-card-body flex-col gap-3">
@@ -523,13 +525,13 @@ export default function AdminDocumentsPage() {
         <div className="danger-zone">
           <div className="danger-zone-header">
             <AlertTriangle size={16} style={{ color: '#e74c3c' }} />
-            <span className="danger-zone-title">Vùng nguy hiểm</span>
+            <span className="danger-zone-title">{t('admin.danger_zone')}</span>
           </div>
           <div className="danger-zone-body">
             <div className="danger-zone-item">
               <div className="danger-zone-item-info">
-                <p className="danger-zone-item-title">Xóa toàn bộ tài liệu</p>
-                <p className="danger-zone-item-desc">Xóa tất cả tài liệu đã upload, dữ liệu vector và docstore. Hành động không thể hoàn tác.</p>
+                <p className="danger-zone-item-title">{t('admin.delete_all_docs')}</p>
+                <p className="danger-zone-item-desc">{t('admin.delete_all_docs_desc')}</p>
               </div>
               <button
                 className="btn btn-danger shrink-0"
@@ -537,14 +539,14 @@ export default function AdminDocumentsPage() {
                 id="admin-delete-all-docs-btn"
               >
                 <Trash2 size={14} />
-                Xóa tất cả tài liệu
+                {t('admin.btn_delete_all_docs')}
               </button>
             </div>
 
             <div className="danger-zone-item">
               <div className="danger-zone-item-info">
-                <p className="danger-zone-item-title">Xóa toàn bộ lịch sử chat</p>
-                <p className="danger-zone-item-desc">Xóa tất cả các phiên hội thoại và tin nhắn của mọi người dùng trong hệ thống.</p>
+                <p className="danger-zone-item-title">{t('admin.delete_all_chats')}</p>
+                <p className="danger-zone-item-desc">{t('admin.delete_all_chats_desc')}</p>
               </div>
               <button
                 className="btn btn-danger shrink-0"
@@ -552,7 +554,7 @@ export default function AdminDocumentsPage() {
                 id="admin-delete-all-sessions-btn"
               >
                 <Trash2 size={14} />
-                Xóa tất cả sessions
+                {t('admin.btn_delete_all_chats')}
               </button>
             </div>
           </div>
@@ -562,16 +564,16 @@ export default function AdminDocumentsPage() {
       {/* Password Modals */}
       {passwordModal === 'all-docs' && (
         <PasswordModal
-          title="Xóa toàn bộ tài liệu?"
-          description="Hành động này sẽ xóa vĩnh viễn toàn bộ tài liệu, dữ liệu vector embedding và docstore. Hành động không thể hoàn tác."
+          title={t('admin.confirm_delete_all_docs_title')}
+          description={t('admin.confirm_delete_all_docs_desc')}
           onConfirm={handleDeleteAllDocs}
           onCancel={() => setPasswordModal(null)}
         />
       )}
       {passwordModal === 'all-sessions' && (
         <PasswordModal
-          title="Xóa toàn bộ lịch sử chat?"
-          description="Hành động này sẽ xóa vĩnh viễn toàn bộ phiên hội thoại và tin nhắn của tất cả người dùng trong hệ thống."
+          title={t('admin.confirm_delete_all_chats_title')}
+          description={t('admin.confirm_delete_all_chats_desc')}
           onConfirm={handleDeleteAllSessions}
           onCancel={() => setPasswordModal(null)}
         />

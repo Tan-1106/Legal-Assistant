@@ -354,12 +354,21 @@ textarea:focus-visible,
   gap: 0.5rem;
 }
 
-.user-card {
+.account-card {
+  background: var(--bg-overlay);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.account-profile {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 0.5rem 0.5rem;
-  border-radius: var(--radius-sm);
+  padding: 0.25rem;
 }
 
 .user-avatar {
@@ -378,7 +387,7 @@ textarea:focus-visible,
 
 .user-info { flex: 1; min-width: 0; }
 .user-name {
-  font-size: 0.875rem;
+  font-size: 0.85rem;
   font-weight: 600;
   color: var(--text);
   white-space: nowrap;
@@ -386,11 +395,21 @@ textarea:focus-visible,
   text-overflow: ellipsis;
 }
 .user-role {
-  font-size: 0.7rem;
+  font-size: 0.65rem;
   font-weight: 600;
   color: var(--brown-400);
   text-transform: uppercase;
   letter-spacing: 0.06em;
+}
+
+.settings-modal {
+  max-width: 400px;
+  width: 100%;
+}
+
+.settings-section {
+  display: flex;
+  flex-direction: column;
 }
 
 /* ── Main Content ── */
@@ -1284,7 +1303,23 @@ textarea:focus-visible,
   border-left: 1px solid var(--border);
   height: 100%;
   flex-shrink: 0;
-  transition: width 0.3s ease;
+  position: relative;
+}
+
+.pdf-resize-handle {
+  position: absolute;
+  top: 0;
+  left: -3px; /* Hang slightly over the border */
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 50;
+  transition: background-color 0.2s;
+}
+
+.pdf-resize-handle:hover,
+.pdf-resize-handle.active {
+  background-color: var(--brown-500);
 }
 
 .pdf-header {
