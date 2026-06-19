@@ -1,12 +1,13 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useAuth } from '../context/auth';
 import { API_BASE_URL } from '../config';
 import Sidebar from '../components/Sidebar';
 import { useChatStream, type SourceNode } from '../hooks/useChatStream';
-import { Send, FileText, Scale, Menu, Square, Loader2 } from 'lucide-react';
+import { Send, FileText, Scale, Menu, Square, Loader2, X, ExternalLink } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { parseMessages } from '../utils/validation';
+import { useTranslation } from 'react-i18next';
 
 interface Message {
   id: string | number;
@@ -17,6 +18,7 @@ interface Message {
 }
 
 export default function ChatDashboard() {
+  const { t } = useTranslation();
   const { apiFetch } = useAuth();
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [messagesBySession, setMessagesBySession] = useState<Record<string, Message[]>>({});
@@ -25,6 +27,12 @@ export default function ChatDashboard() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [sessionsVersion, setSessionsVersion] = useState(0);
+  const [selectedPdfUrl, setSelectedPdfUrl] = useState<string | null>(null);
+  const [selectedPdfTitle, setSelectedPdfTitle] = useState<string>('');
+  const [pdfPaneWidth, setPdfPaneWidth] = useState<number>(500);
+  const [isDraggingPdf, setIsDraggingPdf] = useState(false);
+  const isDraggingPdfRef = useRef(false);
+
   const { sendMessage, isStreaming, cancelStream } = useChatStream();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -51,7 +59,7 @@ export default function ChatDashboard() {
 
     void apiFetch(`${API_BASE_URL}/sessions/${sessionId}/messages`, { signal: controller.signal })
       .then(async response => {
-        if (!response.ok) throw new Error(`Không thể tải lịch sử (${response.status})`);
+        if (!response.ok) throw new Error(`${t('sidebar.err_load')} (${response.status})`);
         return response.json();
       })
       .then(data => {
@@ -66,7 +74,7 @@ export default function ChatDashboard() {
       .catch(fetchError => {
         if (!controller.signal.aborted) {
           console.error(fetchError);
-          setError('Không thể tải lịch sử cuộc trò chuyện.');
+          setError(t('sidebar.err_load'));
           setIsLoadingHistory(false);
         }
       });
@@ -89,7 +97,7 @@ export default function ChatDashboard() {
         const res = await apiFetch(`${API_BASE_URL}/sessions/`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title: 'Cuộc trò chuyện mới' }),
+          body: JSON.stringify({ title: t('sidebar.new_chat') }),
         });
         if (!res.ok) throw new Error('Cannot create session');
         const data = await res.json();
@@ -99,7 +107,7 @@ export default function ChatDashboard() {
         setCurrentSessionId(newSessionId);
         setSessionsVersion(v => v + 1);
       } catch {
-        setError('Không thể tạo cuộc trò chuyện mới.');
+        setError(t('sidebar.err_create'));
         return;
       }
     }
@@ -167,24 +175,48 @@ export default function ChatDashboard() {
     }
   };
 
-  const handleOpenSource = async (filename: string) => {
-    const previewWindow = window.open('about:blank', '_blank', 'noopener,noreferrer');
-    if (previewWindow) previewWindow.opener = null;
-    try {
-      const response = await apiFetch(`${API_BASE_URL}/documents/file/${encodeURIComponent(filename)}`);
-      if (!response.ok) throw new Error(`Document request failed with status ${response.status}`);
-      const blobUrl = URL.createObjectURL(await response.blob());
-      if (previewWindow) {
-        previewWindow.location.href = blobUrl;
-      } else {
-        const link = document.createElement('a');
-        link.href = blobUrl; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.click();
+  const handleMouseDownPdfResize = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isDraggingPdfRef.current = true;
+    setIsDraggingPdf(true);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    const handleMouseMove = (mouseEvent: MouseEvent) => {
+      if (!isDraggingPdfRef.current) return;
+      // The pane is on the right, so its width is window width minus mouse X position
+      const newWidth = window.innerWidth - mouseEvent.clientX;
+      if (newWidth > 300 && newWidth < window.innerWidth - 300) {
+        setPdfPaneWidth(newWidth);
       }
-      window.setTimeout(() => URL.revokeObjectURL(blobUrl), 300_000);
-    } catch (error) {
-      previewWindow?.close();
-      console.error(error);
-      setError('Không thể mở tài liệu nguồn.');
+    };
+
+    const handleMouseUp = () => {
+      isDraggingPdfRef.current = false;
+      setIsDraggingPdf(false);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  }, []);
+
+  const handleOpenSource = (filename: string, pageLabel: string | number) => {
+    let docUrl = `${API_BASE_URL}/documents/file/${encodeURIComponent(filename)}`;
+    if (filename.toLowerCase().endsWith('.pdf')) {
+      if (pageLabel && pageLabel !== 'N/A') {
+        docUrl += `#page=${pageLabel}`;
+      }
+      setSelectedPdfUrl(docUrl);
+      setSelectedPdfTitle(filename);
+    } else {
+      const previewWindow = window.open(docUrl, '_blank', 'noopener,noreferrer');
+      if (!previewWindow) {
+        setError(t('chat.err_blocked'));
+      }
     }
   };
 
@@ -192,7 +224,7 @@ export default function ChatDashboard() {
     if (!sources?.length) return null;
     return (
       <div className="sources-container">
-        <p className="sources-label">Nguồn tham khảo</p>
+        <p className="sources-label">{t('chat.sources_label')}</p>
         <div className="source-list">
           {sources.map((src, index) => {
             const filename = typeof src.metadata.file_name === 'string' ? src.metadata.file_name : '';
@@ -202,14 +234,14 @@ export default function ChatDashboard() {
               <button
                 key={`${filename}-${index}`}
                 type="button"
-                onClick={() => handleOpenSource(filename)}
+                onClick={() => handleOpenSource(filename, pageLabel)}
                 disabled={!filename}
                 className="source-card"
               >
                 <FileText size={13} className="shrink-0" />
                 <span>
-                  <span className="source-filename">{filename || 'Không rõ tài liệu'}</span>
-                  <span style={{ color: 'var(--text-faint)', fontSize: '0.7rem' }}>Trang: {pageLabel}</span>
+                  <span className="source-filename">{filename || 'Unknown'}</span>
+                  <span style={{ color: 'var(--text-faint)', fontSize: '0.7rem' }}>{t('chat.source_page', { page: pageLabel })}</span>
                 </span>
               </button>
             );
@@ -239,7 +271,7 @@ export default function ChatDashboard() {
         <button
           type="button"
           className="sidebar-overlay"
-          aria-label="Đóng danh sách cuộc trò chuyện"
+          aria-label={t('chat.aria_close_sidebar')}
           onClick={() => setIsSidebarOpen(false)}
         />
       )}
@@ -250,13 +282,13 @@ export default function ChatDashboard() {
           <button
             type="button"
             className="btn btn-ghost icon-button"
-            aria-label="Mở danh sách cuộc trò chuyện"
+            aria-label={t('chat.aria_open_sidebar')}
             onClick={() => setIsSidebarOpen(true)}
           >
             <Menu size={20} />
           </button>
           <Scale size={18} style={{ color: 'var(--brown-400)' }} />
-          <span className="font-bold text-sm">Trợ Lý Pháp Lý</span>
+          <span className="font-bold text-sm">{t('chat.title')}</span>
         </div>
 
         {/* Chat area */}
@@ -272,16 +304,16 @@ export default function ChatDashboard() {
           {isLoadingHistory ? (
             <div className="flex items-center justify-center flex-1 gap-3 text-muted">
               <Loader2 size={20} className="spin" />
-              <span className="text-sm">Đang tải lịch sử...</span>
+              <span className="text-sm">{t('chat.loading_history')}</span>
             </div>
           ) : messages.length === 0 ? (
             <div className="welcome-state animate-fade-in">
               <div className="welcome-icon">
                 <Scale size={30} color="#fff" strokeWidth={1.5} />
               </div>
-              <h2 className="welcome-title">Trợ lý pháp lý AI</h2>
+              <h2 className="welcome-title">{t('chat.title')}</h2>
               <p className="welcome-sub">
-                Đặt câu hỏi về pháp luật Việt Nam. Tôi sẽ tra cứu và tư vấn dựa trên cơ sở dữ liệu pháp luật hiện hành.
+                {t('chat.input_placeholder')}
               </p>
             </div>
           ) : (
@@ -329,7 +361,7 @@ export default function ChatDashboard() {
             <textarea
               ref={textareaRef}
               className="chat-textarea"
-              placeholder="Nhập câu hỏi pháp lý... (Enter để gửi, Shift+Enter để xuống dòng)"
+              placeholder={t('chat.input_placeholder')}
               value={input}
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
@@ -343,7 +375,7 @@ export default function ChatDashboard() {
                 type="button"
                 onClick={cancelStream}
                 className="chat-stop-btn"
-                aria-label="Dừng sinh văn bản"
+                aria-label={t('chat.aria_stop_generation')}
                 id="chat-stop-btn"
               >
                 <Square size={15} fill="currentColor" />
@@ -352,7 +384,7 @@ export default function ChatDashboard() {
               <button
                 type="submit"
                 className="chat-send-btn"
-                aria-label="Gửi câu hỏi"
+                aria-label={t('chat.aria_send_question')}
                 disabled={!input.trim() || isLoadingHistory}
                 id="chat-send-btn"
               >
@@ -361,10 +393,58 @@ export default function ChatDashboard() {
             )}
           </form>
           <p className="text-center text-xs text-faint mt-2">
-            AI có thể mắc lỗi. Hãy kiểm tra thông tin pháp lý từ nguồn chính thức.
+            {t('chat.disclaimer')}
           </p>
         </div>
       </div>
+
+      {/* PDF Viewer Pane */}
+      {selectedPdfUrl && (
+        <div 
+          className="pdf-viewer-pane" 
+          style={{ width: pdfPaneWidth, transition: isDraggingPdf ? 'none' : undefined }}
+        >
+          <div 
+            className={`pdf-resize-handle ${isDraggingPdf ? 'active' : ''}`} 
+            onMouseDown={handleMouseDownPdfResize} 
+          />
+          <div className="pdf-header">
+            <span className="pdf-title" title={selectedPdfTitle}>{selectedPdfTitle}</span>
+            <div className="pdf-actions">
+              <button
+                type="button"
+                className="btn btn-ghost icon-button"
+                aria-label={t('chat.btn_open_new')}
+                onClick={() => {
+                  window.open(selectedPdfUrl, '_blank', 'noopener,noreferrer');
+                  setSelectedPdfUrl(null);
+                }}
+              >
+                <ExternalLink size={16} />
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost icon-button"
+                aria-label={t('chat.btn_close_doc')}
+                onClick={() => setSelectedPdfUrl(null)}
+              >
+                <X size={16} />
+              </button>
+            </div>
+          </div>
+          <iframe
+            key={selectedPdfUrl}
+            src={selectedPdfUrl}
+            className="pdf-iframe"
+            title={t('chat.pdf_viewer_title')}
+            style={{ pointerEvents: isDraggingPdf ? 'none' : 'auto' }}
+          />
+          {/* Invisible overlay to catch fast mouse movements over the iframe */}
+          {isDraggingPdf && (
+            <div style={{ position: 'fixed', inset: 0, zIndex: 9999, cursor: 'col-resize' }} />
+          )}
+        </div>
+      )}
     </div>
   );
 }

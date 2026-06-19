@@ -1,17 +1,16 @@
 import os
 import shutil
 import tempfile
-from typing                     import List
-from fastapi                    import APIRouter, UploadFile, File, HTTPException, Depends, Request
-from fastapi.responses          import FileResponse
-from app.config                 import settings
-from app.models.all_models      import User
-from app.services.auth_service  import get_current_user, get_current_admin_user
-from app.services.rag_pipeline  import delete_document, delete_all_documents
-from app.db.session             import get_db
-from sqlalchemy.orm             import Session as DbSession
-from app.services.task_service  import TaskTrackerService, get_task_service
-from app.services.rate_limit    import RateLimit, RateLimiter, get_rate_limiter
+from typing                         import List
+from fastapi                        import APIRouter, UploadFile, File, HTTPException, Depends, Request
+from fastapi.responses              import FileResponse
+from app.config                     import settings
+from app.models.all_models          import User
+from app.services.auth_service      import get_current_user, get_current_admin_user
+from app.services.rag_pipeline      import delete_document, delete_all_documents
+from app.db.session                 import get_db
+from app.services.task_service      import TaskTrackerService, get_task_service
+from app.services.rate_limit        import RateLimit, RateLimiter, get_rate_limiter
 from app.services.upload_validation import (
     POLICY,
     stream_upload,
@@ -298,4 +297,4 @@ def get_document_file(
     # Determine the correct media type, defaulting to octet-stream
     media_type = "application/pdf" if filename.lower().endswith(".pdf") else "application/octet-stream"
     
-    return FileResponse(file_path, media_type=media_type, filename=filename)
+    return FileResponse(file_path, media_type=media_type, content_disposition_type="inline", filename=filename)

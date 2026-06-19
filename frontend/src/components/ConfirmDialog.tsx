@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+
 interface ConfirmDialogProps {
   title: string;
   message: string;
@@ -13,6 +15,7 @@ export default function ConfirmDialog({
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
+  const { t } = useTranslation();
   return (
     <div className="dialog-backdrop" role="presentation" onMouseDown={onCancel}>
       <section
@@ -26,8 +29,8 @@ export default function ConfirmDialog({
         <h2 id="confirm-dialog-title" className="text-lg font-bold">{title}</h2>
         <p id="confirm-dialog-message" className="text-sm text-muted">{message}</p>
         <div className="flex justify-end gap-2">
-          <button type="button" className="btn btn-ghost" onClick={onCancel}>Hủy</button>
-          <button type="button" className="btn btn-primary" onClick={onConfirm}>{confirmLabel}</button>
+          <button type="button" className="btn btn-ghost" onClick={onCancel}>{t('common.cancel')}</button>
+          <button type="button" className="btn btn-primary" onClick={onConfirm}>{confirmLabel === 'Xác nhận' ? t('common.confirm') : confirmLabel}</button>
         </div>
       </section>
     </div>

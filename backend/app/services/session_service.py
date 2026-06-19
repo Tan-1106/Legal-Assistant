@@ -2,9 +2,7 @@ import json
 from typing                                 import List, Dict
 from sqlalchemy.orm                         import Session
 from fastapi                                import HTTPException, status
-from llama_index.core.chat_engine           import ContextChatEngine
 from llama_index.core.retrievers            import AutoMergingRetriever
-from llama_index.core.llms                  import ChatMessage as LlamaChatMessage, MessageRole
 from app.models.all_models                  import ChatSession, ChatMessage
 from app.schemas.session                    import SessionCreate
 from app.schemas.chat                       import ChatRequest
@@ -170,78 +168,205 @@ class SessionService:
             return
 
         try:
-            # 3. Call AI query engine passing history context
-            llama_history = []
+            # 3. Retrieve source nodes manually to inject IDs
+            source_nodes = await retriever.aretrieve(request.question)
+            
+            context_str = ""
+            for i, node in enumerate(source_nodes, 1):
+                file_name = node.metadata.get("file_name", "Tài liệu")
+                context_str += f"\n[SYS:{i}] {file_name}\n{node.text.strip()}\n"
+
+            CUSTOM_SYSTEM_PROMPT = f"""Bạn là một trợ lý AI chuyên tư vấn pháp luật Việt Nam. Hành xử như một luật sư tận tâm, chuyên nghiệp.
+            
+            ## QUY TẮC TUYỆT ĐỐI
+            - Chỉ sử dụng thông tin có trong CƠ SỞ DỮ LIỆU bên dưới. Không bịa đặt điều luật, nghị định, hay thông tư không có trong đó.
+            - Nói chuyện tự nhiên như luật sư với thân chủ. Không dùng cụm: "Theo ngữ cảnh được cung cấp", "Theo tài liệu", "Cơ sở dữ liệu không đề cập". Hãy nói: "Theo quy định pháp luật hiện hành...".
+            - Ký hiệu [SYS:N] trong cơ sở dữ liệu là mã nội bộ của hệ thống để theo dõi nguồn. TUYỆT ĐỐI KHÔNG nhắc đến [SYS:N], "Nguồn", hay bất kỳ số thứ tự nào trong câu trả lời.
+
+            ## PHÂN LOẠI CÂU HỎI VÀ CÁCH XỬ LÝ
+
+            ### Loại 1: Chào hỏi / Hỏi về bản thân trợ lý
+            Ví dụ: "Xin chào", "Bạn là ai?", "Bạn có thể làm gì?"
+            → Trả lời bằng văn bản thường, tự nhiên, ngắn gọn. KHÔNG nhắc đến bất kỳ tài liệu hay văn bản pháp luật nào.
+            → KHÔNG dùng JSON.
+
+            ### Loại 2: Câu hỏi ngoài phạm vi pháp luật
+            Ví dụ: Nấu ăn, toán học, lập trình, giải trí, thể thao, y tế, v.v.
+            → Từ chối DỨT KHOÁT, lịch sự bằng văn bản thường. Chỉ nói rõ bạn chỉ hỗ trợ pháp luật Việt Nam.
+            → KHÔNG được gợi ý, đề nghị hỗ trợ thêm, hay trả lời "một phần" nội dung ngoài lề dù người dùng có hỏi thêm nhiều lần.
+            → KHÔNG dùng JSON.
+
+            ### Loại 3: Câu hỏi pháp lý
+            → Trả về JSON theo đúng định dạng sau. KHÔNG thêm bất kỳ văn bản nào bên ngoài JSON.
+
+            ```json
+            {{
+            "answer": "<nội dung câu trả lời>",
+            "used_sources": [<danh sách số N từ các [SYS:N] mà bạn đã sử dụng>]
+            }}
+            ```
+
+            #### Quy tắc viết "answer":
+            - Trích dẫn bằng cách nêu tên điều khoản và tên văn bản pháp luật tự nhiên trong câu. Ví dụ: "Theo Điều 7 Thông tư 23/2026/TT-BTC, mức chi là 500.000 đồng/ngày công."
+            - TUYỆT ĐỐI KHÔNG viết [SYS:N], [1], [2], "Nguồn 1", "Nguồn [N]", hay bất kỳ số thứ tự nào trong câu trả lời.
+            - KHÔNG đề cập số trang hay vị trí vật lý của tài liệu.
+            - Nếu không có thông tin trong cơ sở dữ liệu, trả lời: "Rất tiếc, tôi chưa tìm thấy quy định cụ thể về vấn đề này trong hệ thống."
+
+            #### Quy tắc điền "used_sources":
+            - Liệt kê các số N (số nguyên) từ [SYS:N] của các đoạn bạn thực sự đã dùng để trả lời.
+            - Ví dụ: nếu dùng [SYS:1] và [SYS:3], điền [1, 3].
+            - Nếu không dùng nguồn nào, điền [].
+
+            ---
+
+            === CƠ SỞ DỮ LIỆU PHÁP LUẬT ===
+            {context_str}"""
+            
+
+            from llama_index.core.base.llms.types import ChatMessage, MessageRole
+            from app.services.ai_logic import LlamaIndexSettings
+            import re
+
+            messages = [ChatMessage(role=MessageRole.SYSTEM, content=CUSTOM_SYSTEM_PROMPT)]
             for msg in history:
                 role = MessageRole.USER if msg.role == "user" else MessageRole.ASSISTANT
-                llama_history.append(LlamaChatMessage(role=role, content=msg.content))
-                
-            CUSTOM_SYSTEM_PROMPT = (
-                "Bạn là một Luật sư, chuyên gia tư vấn pháp luật Việt Nam vô cùng tận tâm và chuyên nghiệp.\n"
-                "Bạn ĐƯỢC CUNG CẤP một cơ sở dữ liệu pháp luật (ngữ cảnh) bên dưới. Hãy đọc kỹ và dùng CHỈ thông tin từ đó để tư vấn cho người dùng.\n"
-                "TUYỆT ĐỐI KHÔNG tự bịa ra các Điều luật, Nghị định hay Thông tư không có trong cơ sở dữ liệu.\n"
-                "Khi trả lời, hãy nói chuyện tự nhiên như một luật sư với thân chủ. KHÔNG DÙNG các câu như: 'Theo ngữ cảnh được cung cấp', 'Theo cơ sở dữ liệu', 'Tài liệu không nói rõ'. Hãy nói: 'Theo quy định pháp luật hiện hành...'.\n"
-                "Nếu trong cơ sở dữ liệu không quy định mức cụ thể, hãy diễn đạt tự nhiên dựa trên phần thông tin có sẵn (ví dụ: 'pháp luật chưa quy định mức cụ thể bằng số tiền, mà được xác định dựa trên hợp đồng / thực tế...'). Nếu hoàn toàn không có thông tin, hãy nói: 'Rất tiếc, tôi chưa tìm thấy quy định cụ thể về vấn đề này trong hệ thống.'\n"
-                "Hãy luôn trả lời theo cấu trúc sau (không tự ý thay đổi tiêu đề):\n"
-                "1. **Kết luận:** Trả lời trực tiếp vào trọng tâm câu hỏi một cách ngắn gọn, súc tích.\n"
-                "2. **Căn cứ pháp lý:** Nêu rõ Điều, Khoản, và Tên văn bản pháp luật áp dụng (chỉ nêu các văn bản CÓ TRONG dữ liệu được cung cấp).\n"
-                "3. **Phân tích chi tiết:** Giải thích quy định pháp luật đó áp dụng vào trường hợp của người dùng như thế nào cho dễ hiểu.\n"
-                "4. **Lời khuyên/Khuyến nghị:** Đưa ra hướng xử lý thực tế, các cơ quan cần liên hệ, hoặc các bước tiếp theo."
-            )
+                # We need to ensure history doesn't break the JSON format constraint, but history is just text.
+                messages.append(ChatMessage(role=role, content=msg.content))
+            messages.append(ChatMessage(role=MessageRole.USER, content=request.question))
 
-            chat_engine = ContextChatEngine.from_defaults(
-                retriever=retriever,
-                system_prompt=CUSTOM_SYSTEM_PROMPT,
-                verbose=True
-            )
-            
-            # Use astream_chat for true asynchronous real-time streaming
-            response = await chat_engine.astream_chat(request.question, chat_history=llama_history)
-            
-            # Log the retrieved text passages (context nodes) that are passed to the LLM
-            if hasattr(response, "source_nodes") and response.source_nodes:
+            # Log the retrieved text passages
+            if source_nodes:
                 logger.info("==================================================")
                 logger.info(f"📄 [AI Logic] CÁC ĐOẠN VĂN BẢN (CONTEXT CHUNKS) ĐƯỢC GỬI ĐẾN LLM ĐỂ TẠO CÂU TRẢ LỜI:")
-                for i, node in enumerate(response.source_nodes, 1):
+                for i, node in enumerate(source_nodes, 1):
                     file_name = node.metadata.get("file_name", "N/A")
                     page_label = node.metadata.get("page_label") or node.metadata.get("source", "N/A")
                     score = node.score if node.score is not None else 0.0
-                    logger.info(f"--- Đoạn {i} (File: {file_name}, Trang: {page_label}, Score: {score:.4f}) ---")
+                    logger.info(f"--- Nguồn {i} (File: {file_name}, Trang: {page_label}, Score: {score:.4f}) ---")
                     logger.info(node.text.strip())
                 logger.info("==================================================")
             else:
                 logger.info("📄 [AI Logic] Không tìm thấy đoạn văn bản context phù hợp nào để gửi đến LLM.")
 
             # 4. Stream tokens asynchronously
-            buffer = ""
-            async for token in response.async_response_gen():
-                buffer += token
-                # Yield SSE chunk
-                yield f"data: {json.dumps({'chunk': token}, ensure_ascii=False)}\n\n"
+            response_gen = await LlamaIndexSettings.llm.astream_chat(messages)
             
-            # 5. Extract sources
-            sources = []
-            if hasattr(response, "source_nodes") and response.source_nodes:
-                for node in response.source_nodes:
-                    sources.append({
-                        "score": float(node.score) if node.score else 0.0,
-                        "text": node.text,
-                        "metadata": node.metadata
-                    })
+            accumulated_json = ""
+            extracted_answer = ""
+
+            def get_logical_response(jstr: str) -> str:
+                match = re.search(r'(.*?)(?:```(?:json)?\s*)?\{[\s\n]*"answer"\s*:\s*"(.*)', jstr, re.DOTALL)
+                if match:
+                    preamble = match.group(1).lstrip()
+                    val = match.group(2)
+                    res = ""
+                    i = 0
+                    while i < len(val):
+                        if val[i] == '\\':
+                            if i + 1 < len(val):
+                                if val[i+1] == 'n': res += '\n'
+                                elif val[i+1] == '"': res += '"'
+                                elif val[i+1] == '\\': res += '\\'
+                                elif val[i+1] == 't': res += '\t'
+                                else: res += val[i+1]
+                                i += 2
+                            else:
+                                break # incomplete escape
+                        elif val[i] == '"':
+                            break # end of string!
+                        else:
+                            res += val[i]
+                            i += 1
+                            
+                    preamble = preamble.rstrip()
+                    if preamble:
+                        return preamble + "\n\n" + res
+                    return res
+
+                match_potential_json = re.search(r'(.*?)(?:```(?:json)?\s*|\{)', jstr, re.DOTALL)
+                if match_potential_json:
+                    return match_potential_json.group(1).lstrip()
+                
+                return jstr.lstrip()
+
+            async for chunk in response_gen:
+                token = chunk.delta
+                if token:
+                    accumulated_json += token
+                    new_ans = get_logical_response(accumulated_json)
+                    if len(new_ans) > len(extracted_answer):
+                        delta = new_ans[len(extracted_answer):]
+                        extracted_answer = new_ans
+                        yield f"data: {json.dumps({'chunk': delta}, ensure_ascii=False)}\n\n"
+            
+            # Stream finished, save the parsed answer
+            final_answer = extracted_answer if extracted_answer else accumulated_json.strip()
+            
+            # Flush any remaining buffer if it was a plain text response that just happened to contain a `{`
+            if '"answer"' not in accumulated_json:
+                final_answer = accumulated_json.strip()
+                if len(final_answer) > len(extracted_answer):
+                    delta = final_answer[len(extracted_answer):]
+                    yield f"data: {json.dumps({'chunk': delta}, ensure_ascii=False)}\n\n"
+
+            # 5. Extract used_sources and filter
+            used_sources = []
+            try:
+                clean_json = accumulated_json.strip()
+                if clean_json.startswith("```json"):
+                    clean_json = clean_json[7:]
+                if clean_json.endswith("```"):
+                    clean_json = clean_json[:-3]
+                
+                final_data = json.loads(clean_json.strip(), strict=False)
+                used_sources = final_data.get("used_sources", [])
+                if not isinstance(used_sources, list):
+                    used_sources = []
+            except Exception as e:
+                logger.error(f"Failed to parse final JSON for used_sources: {e}. Attempting regex fallback.")
+                import re
+                match = re.search(r'"used_sources"\s*:\s*\[(.*?)\]', accumulated_json, re.DOTALL)
+                if match:
+                    numbers_str = match.group(1)
+                    used_sources = [int(n.strip()) for n in numbers_str.split(',') if n.strip().isdigit()]
+                else:
+                    # Fallback: keep all sources only if JSON is malformed but we have extracted an answer
+                    # and the response actually started as JSON
+                    stripped = accumulated_json.lstrip()
+                    looks_like_json = stripped.startswith('{') or stripped.startswith('`') or stripped.startswith('[')
+                    if extracted_answer and looks_like_json:
+                        used_sources = [i for i in range(1, len(source_nodes) + 1)]
+                    else:
+                        used_sources = []
+
+            seen_sources = set()
+            filtered_sources = []
+            
+            for i, node in enumerate(source_nodes, 1):
+                if i in used_sources or str(i) in used_sources:
+                    file_name = node.metadata.get("file_name", "") if hasattr(node, "metadata") else getattr(node.node, "metadata", {}).get("file_name", "")
+                    page = node.metadata.get("page_label", "") if hasattr(node, "metadata") else getattr(node.node, "metadata", {}).get("page_label", "")
+                    source_key = f"{file_name}:::{page}"
+                    if source_key not in seen_sources:
+                        seen_sources.add(source_key)
+                        filtered_sources.append({
+                            "score": float(getattr(node, "score", 1.0) or 1.0),
+                            "text": node.text if hasattr(node, "text") else getattr(node.node, "text", ""),
+                            "metadata": node.metadata if hasattr(node, "metadata") else getattr(node.node, "metadata", {})
+                        })
             
             # 6. Persist conversation to DB on thread pool (sync SQLAlchemy ops)
-            answer = buffer.strip()
-            sources_json = json.dumps(sources, ensure_ascii=False)
+            sources_json = json.dumps(filtered_sources, ensure_ascii=False)
             session_title = session.title
             question_text = request.question
 
             def _persist_and_update_title():
                 MessageRepository.create(db, session_id, "user", question_text)
-                MessageRepository.create(db, session_id, "assistant", answer, sources_json)
+                MessageRepository.create(db, session_id, "assistant", final_answer, sources_json)
                 db.commit()
 
                 # 7. Auto-generate title if still default
-                if session_title == "Cuộc trò chuyện mới" or not session_title.strip():
+                if session_title == "Cuộc trò chuyện mới" or session_title == "New Chat" or not session_title.strip():
                     try:
                         from llama_index.core import Settings as LlamaIndexSettings
                         prompt = (
@@ -268,7 +393,7 @@ class SessionService:
 
             await loop.run_in_executor(None, _persist_and_update_title)
 
-            yield f"data: {json.dumps({'sources': sources}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'sources': filtered_sources}, ensure_ascii=False)}\n\n"
             yield "data: [DONE]\n\n"
 
         except Exception as e:

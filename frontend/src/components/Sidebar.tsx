@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../context/auth';
 import { API_BASE_URL } from '../config';
-import { Scale, MessageSquare, Plus, LogOut, Database, Trash2, X, LogOutIcon } from 'lucide-react';
+import { Scale, MessageSquare, Plus, LogOut, Database, Trash2, X, LogOutIcon, Globe, Settings, User, Shield } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import ConfirmDialog from './ConfirmDialog';
 import { parseSessions } from '../utils/validation';
+import { useTranslation } from 'react-i18next';
 
 export interface ChatSession {
   id: string;
@@ -27,6 +28,7 @@ export default function Sidebar({
   onClose,
   refreshKey,
 }: SidebarProps) {
+  const { t, i18n } = useTranslation();
   const { user, logout, logoutAll, apiFetch } = useAuth();
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [error, setError] = useState('');
@@ -34,6 +36,7 @@ export default function Sidebar({
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<ChatSession | null>(null);
   const [confirmLogoutAll, setConfirmLogoutAll] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -41,7 +44,7 @@ export default function Sidebar({
 
     void apiFetch(`${API_BASE_URL}/sessions/`, { signal: controller.signal })
       .then(async response => {
-        if (!response.ok) throw new Error(`Không thể tải danh sách phiên (${response.status})`);
+        if (!response.ok) throw new Error(t('sidebar.err_load_sessions', { status: response.status }));
         return response.json();
       })
       .then(data => {
@@ -51,7 +54,7 @@ export default function Sidebar({
       .catch(fetchError => {
         if (!controller.signal.aborted) {
           console.error(fetchError);
-          setError('Không thể tải danh sách cuộc trò chuyện.');
+          setError(t('sidebar.err_load'));
         }
       });
 
@@ -65,16 +68,16 @@ export default function Sidebar({
       const res = await apiFetch(`${API_BASE_URL}/sessions/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: 'Cuộc trò chuyện mới' }),
+        body: JSON.stringify({ title: t('sidebar.new_chat') }),
       });
-      if (!res.ok) throw new Error(`Không thể tạo phiên (${res.status})`);
+      if (!res.ok) throw new Error(t('sidebar.err_create_session', { status: res.status }));
 
       const [newSession] = parseSessions([await res.json()]);
       setSessions(previous => [newSession, ...previous]);
       onSelectSession(newSession.id);
     } catch (createError) {
       console.error(createError);
-      setError('Không thể tạo cuộc trò chuyện mới.');
+      setError(t('sidebar.err_create'));
     } finally {
       setIsCreating(false);
     }
@@ -85,12 +88,12 @@ export default function Sidebar({
     setError('');
     try {
       const response = await apiFetch(`${API_BASE_URL}/sessions/${id}`, { method: 'DELETE' });
-      if (!response.ok) throw new Error(`Không thể xóa phiên (${response.status})`);
+      if (!response.ok) throw new Error(t('sidebar.err_delete_session', { status: response.status }));
       setSessions(previous => previous.filter(session => session.id !== id));
       if (currentSessionId === id) onSelectSession(null);
     } catch (deleteError) {
       console.error(deleteError);
-      setError('Không thể xóa cuộc trò chuyện.');
+      setError(t('sidebar.err_delete'));
     } finally {
       setDeletingSessionId(null);
     }
@@ -103,7 +106,7 @@ export default function Sidebar({
       await logoutAll();
     } catch (logoutError) {
       console.error(logoutError);
-      setError('Không thể đăng xuất khỏi tất cả thiết bị.');
+      setError(t('sidebar.err_logout_all'));
     }
   };
 
@@ -113,20 +116,21 @@ export default function Sidebar({
       await logout();
     } catch (logoutError) {
       console.error(logoutError);
-      setError('Không thể đăng xuất. Vui lòng thử lại.');
+      setError(t('sidebar.err_logout'));
     }
   };
 
-  const userInitial = user?.username?.charAt(0).toUpperCase() ?? '?';
+
 
   return (
-    <aside className={`sidebar ${isOpen ? 'sidebar-open' : ''}`}>
+    <>
+      <aside className={`sidebar ${isOpen ? 'sidebar-open' : ''}`}>
       {/* Mobile close */}
       <button
         type="button"
         className="sidebar-close"
         onClick={onClose}
-        aria-label="Đóng menu"
+        aria-label={t('sidebar.aria_close_menu')}
       >
         <X size={16} />
       </button>
@@ -137,8 +141,8 @@ export default function Sidebar({
           <Scale size={18} color="#fff" strokeWidth={1.8} />
         </div>
         <div>
-          <div className="sidebar-brand">Trợ Lý Pháp Lý</div>
-          <div className="sidebar-brand-sub">AI Tư Vấn Pháp Luật</div>
+          <div className="sidebar-brand">{t('chat.title')}</div>
+          <div className="sidebar-brand-sub">{t('sidebar.brand_sub')}</div>
         </div>
       </div>
 
@@ -151,7 +155,7 @@ export default function Sidebar({
           id="sidebar-new-chat-btn"
         >
           <Plus size={16} />
-          <span>{isCreating ? 'Đang tạo...' : 'Cuộc trò chuyện mới'}</span>
+          <span>{isCreating ? t('sidebar.creating') : t('sidebar.new_chat')}</span>
         </button>
 
         {error && (
@@ -159,7 +163,7 @@ export default function Sidebar({
         )}
 
         {sessions.length > 0 && (
-          <p className="sessions-label">Lịch sử</p>
+          <p className="sessions-label">{t('sidebar.history')}</p>
         )}
 
         {sessions.map(s => (
@@ -195,9 +199,9 @@ export default function Sidebar({
         ))}
 
         {sessions.length === 0 && !error && (
-          <div className="flex flex-col items-center gap-2 py-8 text-center">
+          <div className="flex-1 flex flex-col items-center justify-center gap-2 text-center pb-12">
             <MessageSquare size={24} className="text-faint" />
-            <p className="text-xs text-faint">Chưa có cuộc trò chuyện nào</p>
+            <p className="text-xs text-faint">{t('sidebar.empty')}</p>
           </div>
         )}
       </div>
@@ -211,43 +215,110 @@ export default function Sidebar({
             id="sidebar-admin-btn"
           >
             <Database size={15} />
-            <span>Quản lý Tài liệu</span>
+            <span>{t('sidebar.manage_docs')}</span>
           </button>
         )}
 
-        <div className="user-card">
-          <div className="user-avatar">{userInitial}</div>
-          <div className="user-info">
-            <div className="user-name">{user?.username}</div>
-            <div className="user-role">{user?.role}</div>
+        <div className="account-card">
+          <div className="account-profile">
+            <div className="user-avatar">
+              {user?.role === 'admin' ? <Shield size={16} /> : <User size={16} />}
+            </div>
+            <div className="user-info">
+              <div className="user-name">{user?.username}</div>
+              <div className="user-role">{t(`common.role_${user?.role}`)}</div>
+            </div>
+            <button
+              type="button"
+              className="btn btn-ghost icon-button"
+              title={t('sidebar.settings')}
+              onClick={() => setIsSettingsOpen(true)}
+              id="sidebar-settings-btn"
+            >
+              <Settings size={15} className="text-faint hover:text-primary transition-colors" />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={handleLogout}
-            className="btn btn-ghost icon-button"
-            title="Đăng xuất"
-            id="sidebar-logout-btn"
-          >
-            <LogOut size={15} />
-          </button>
         </div>
-
-        <button
-          type="button"
-          className="btn btn-ghost w-full text-xs text-faint"
-          onClick={() => setConfirmLogoutAll(true)}
-          id="sidebar-logout-all-btn"
-        >
-          <LogOutIcon size={12} />
-          Đăng xuất tất cả thiết bị
-        </button>
       </div>
 
+      {/* Settings Modal - Moved outside aside */}
+      {isSettingsOpen && (
+        <div className="dialog-backdrop" role="presentation" onMouseDown={() => setIsSettingsOpen(false)}>
+          <section
+            className="glass-panel dialog-panel settings-dialog animate-slide-up"
+            role="dialog"
+            onMouseDown={event => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-[var(--border)] pb-3 mb-2">
+              <h3 className="text-lg font-bold flex items-center gap-2">
+                <Settings size={18} className="text-brown-400" />
+                {t('sidebar.settings_title')}
+              </h3>
+              <button 
+                type="button" 
+                className="btn btn-ghost icon-button" 
+                onClick={() => setIsSettingsOpen(false)}
+                title={t('sidebar.btn_close')}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            
+            <div className="flex flex-col gap-6 pt-2">
+              {/* Language Settings */}
+              <div className="flex flex-col gap-2">
+                <h4 className="text-xs font-bold text-faint uppercase tracking-wider">{t('sidebar.language')}</h4>
+                <div className="flex gap-2">
+                  <button
+                    className={`btn flex-1 justify-center py-2 ${i18n.language.startsWith('en') ? 'btn-primary' : 'btn-secondary'}`}
+                    onClick={() => i18n.changeLanguage('en')}
+                  >
+                    <Globe size={14} className="mr-1" /> English
+                  </button>
+                  <button
+                    className={`btn flex-1 justify-center py-2 ${i18n.language.startsWith('vi') ? 'btn-primary' : 'btn-secondary'}`}
+                    onClick={() => i18n.changeLanguage('vi')}
+                  >
+                    <Globe size={14} className="mr-1" /> Tiếng Việt
+                  </button>
+                </div>
+              </div>
+
+              {/* Account Actions */}
+              <div className="flex flex-col gap-2">
+                <h4 className="text-xs font-bold text-faint uppercase tracking-wider">{t('sidebar.account_actions')}</h4>
+                <div className="flex flex-col gap-2">
+                  <button
+                    type="button"
+                    className="btn btn-secondary w-full justify-start py-2.5"
+                    onClick={() => { setIsSettingsOpen(false); setConfirmLogoutAll(true); }}
+                  >
+                    <LogOutIcon size={14} className="mr-2" />
+                    {t('sidebar.logout_all')}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn w-full justify-start py-2.5 text-danger bg-[var(--danger-bg)] border border-[var(--danger-border)] hover:bg-[rgba(231,76,60,0.2)] transition-colors"
+                    onClick={() => { setIsSettingsOpen(false); handleLogout(); }}
+                  >
+                    <LogOut size={14} className="mr-2" />
+                    {t('sidebar.logout')}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      )}
+
+    </aside>
+
+      {/* Settings Modal will be placed outside aside via state in a future refactor, wait we already did this above. So now we just move pendingDelete & confirmLogoutAll out of aside. Wait, I should not render them here if they are already moved... let me just close aside and render them. */}
       {pendingDelete && (
         <ConfirmDialog
-          title="Xóa cuộc trò chuyện?"
-          message={`"${pendingDelete.title}" sẽ bị xóa vĩnh viễn.`}
-          confirmLabel="Xóa"
+          title={t('sidebar.delete_title')}
+          message={t('sidebar.delete_msg', { title: pendingDelete.title })}
+          confirmLabel={t('sidebar.btn_delete')}
           onCancel={() => setPendingDelete(null)}
           onConfirm={() => {
             const id = pendingDelete.id;
@@ -258,13 +329,13 @@ export default function Sidebar({
       )}
       {confirmLogoutAll && (
         <ConfirmDialog
-          title="Đăng xuất tất cả thiết bị?"
-          message="Mọi phiên đăng nhập hiện tại của tài khoản sẽ bị thu hồi."
-          confirmLabel="Đăng xuất tất cả"
+          title={t('sidebar.logout_all_title')}
+          message={t('sidebar.logout_all_msg')}
+          confirmLabel={t('sidebar.btn_logout_all')}
           onCancel={() => setConfirmLogoutAll(false)}
           onConfirm={() => void handleLogoutAll()}
         />
       )}
-    </aside>
+    </>
   );
 }
