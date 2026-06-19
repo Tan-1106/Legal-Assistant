@@ -82,7 +82,7 @@ def authenticate_user(db: Session, username: str, password: str) -> Optional[Use
         Optional[User]: The authenticated User object if credentials are valid, otherwise None.
     """
     user = UserRepository.get_by_username(db, username)
-    if not user:
+    if not user or not user.is_active:
         return None
     if not verify_password(password, user.hashed_password):
         return None
@@ -153,7 +153,7 @@ def get_current_user(
         raise credentials_exception
 
     user = UserRepository.get_by_username(db, username)
-    if user is None:
+    if user is None or not user.is_active:
         raise credentials_exception
     return user
 

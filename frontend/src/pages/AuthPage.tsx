@@ -16,6 +16,7 @@ export default function AuthPage() {
   const [error, setError] = useState('');
   const [isSuccess, setIsSuccess] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [agreedToPrivacy, setAgreedToPrivacy] = useState(false);
   const { user, login } = useAuth();
 
   useEffect(() => {
@@ -33,6 +34,10 @@ export default function AuthPage() {
     setIsSubmitting(true);
 
     try {
+      if (!isLogin && !agreedToPrivacy) {
+        throw new Error(t('auth.err_privacy'));
+      }
+
       if (isLogin) {
         const formData = new URLSearchParams();
         formData.append('username', username);
@@ -140,6 +145,26 @@ export default function AuthPage() {
               </button>
             </div>
           </div>
+
+          {!isLogin && (
+            <div className="auth-field" style={{ marginTop: '0.5rem' }}>
+              <label className="flex items-start gap-2" style={{ cursor: 'pointer', fontSize: '0.8rem', color: 'var(--text)' }}>
+                <input
+                  type="checkbox"
+                  checked={agreedToPrivacy}
+                  onChange={e => setAgreedToPrivacy(e.target.checked)}
+                  disabled={isSubmitting}
+                  style={{ marginTop: '0.2rem' }}
+                />
+                <div style={{ flex: 1, lineHeight: '1.4' }}>
+                  <span style={{ fontWeight: '500' }}>{t('auth.privacy_agree')}</span>
+                  <p className="text-faint mt-1" style={{ fontSize: '0.75rem' }}>
+                    {t('auth.privacy_warning')}
+                  </p>
+                </div>
+              </label>
+            </div>
+          )}
 
           {error && (
             <div

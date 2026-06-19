@@ -1,6 +1,6 @@
 import uuid
 from datetime           import datetime
-from sqlalchemy         import Column, String, Integer, DateTime, ForeignKey, Text
+from sqlalchemy         import Column, String, Integer, DateTime, ForeignKey, Text, Boolean
 from sqlalchemy.orm     import relationship
 from app.db.session     import Base
 
@@ -15,6 +15,7 @@ class User(Base):
     username = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     role = Column(String, default="user", nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
 
     # Relationships
     sessions = relationship("ChatSession", back_populates="user", cascade="all, delete-orphan")

@@ -231,6 +231,113 @@ def delete_all_documents_endpoint(
 
 
 # Document deletion
+@router.get("/{filename}/preview")
+def preview_document(
+    filename: str,
+    current_admin: User = Depends(get_current_admin_user)
+):
+    """
+    Get raw text preview of a document.
+    """
+    file_path = os.path.join(settings.DATA_DIR, filename)
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="File not found")
+        
+    ext = os.path.splitext(filename)[1].lower()
+    if ext == ".txt":
+        with open(file_path, "r", encoding="utf-8") as f:
+            return {"text": f.read()}
+            
+    from llama_index.core import SimpleDirectoryReader
+    from app.services.smart_pdf_reader import SmartPDFReader
+    
+    file_extractor = {".pdf": SmartPDFReader()} if ext == ".pdf" else None
+    documents = SimpleDirectoryReader(
+        input_files=[file_path],
+        file_extractor=file_extractor
+    ).load_data()
+    
+    text = "\n\n".join([doc.text for doc in documents])
+    return {"text": text}
+
+
+@router.get("/{filename}/chunks")
+def get_document_chunks(
+    filename: str,
+    skip: int = 0,
+    limit: int = 100,
+    current_admin: User = Depends(get_current_admin_user)
+):
+    """
+    Get indexed chunks for a document.
+    """
+    from llama_index.core.storage.docstore import SimpleDocumentStore
+    
+    docstore_path = settings.DOCSTORE_PATH
+    if not os.path.exists(docstore_path):
+        return {"total": 0, "chunks": []}
+        
+    docstore = SimpleDocumentStore.from_persist_path(docstore_path)
+    
+    chunks = []
+    for doc_id, doc in docstore.docs.items():
+        if doc.metadata.get("file_name") == filename:
+            chunks.append({
+                "id": doc_id,
+                "text": doc.text,
+                "metadata": doc.metadata
+            })
+            
+    total = len(chunks)
+    paginated = chunks[skip : skip + limit]
+    return {
+        "total": total,
+        "page": (skip // limit) + 1 if limit > 0 else 1,
+        "page_size": limit,
+        "chunks": paginated
+    }
+
+
+class UpdateChunkRequest(PydanticBaseModel):
+    text: str
+
+@router.put("/chunks/{chunk_id}")
+def update_chunk(
+    chunk_id: str,
+    req: UpdateChunkRequest,
+    current_admin: User = Depends(get_current_admin_user)
+):
+    """
+    Update a chunk's text and re-embed in the vector store.
+    """
+    from llama_index.core.storage.docstore import SimpleDocumentStore
+    from app.db.qdrant_store import init_qdrant_vector_store
+    from llama_index.core import Settings
+    
+    docstore_path = settings.DOCSTORE_PATH
+    if not os.path.exists(docstore_path):
+        raise HTTPException(status_code=404, detail="Docstore not found")
+        
+    docstore = SimpleDocumentStore.from_persist_path(docstore_path)
+    if chunk_id not in docstore.docs:
+        raise HTTPException(status_code=404, detail="Chunk not found")
+        
+    node = docstore.docs[chunk_id]
+    node.set_content(req.text)
+    
+    # Persist in docstore
+    docstore.persist(docstore_path)
+    
+    # Re-embed and upsert to Qdrant
+    embed_model = Settings.embed_model
+    if embed_model:
+        node.embedding = embed_model.get_text_embedding(req.text)
+    
+    vector_store = init_qdrant_vector_store()
+    vector_store.add([node])
+    
+    return {"status": "success", "chunk_id": chunk_id}
+
 @router.delete("/{filename}")
 def delete_document_endpoint(
     filename: str,

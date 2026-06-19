@@ -4,7 +4,10 @@ import { AuthProvider } from './context/AuthContext';
 import { useAuth } from './context/auth';
 import AuthPage from './pages/AuthPage';
 import ChatDashboard from './pages/ChatDashboard';
-import AdminDocumentsPage from './pages/AdminDocumentsPage';
+import AdminLayout from './pages/admin/AdminLayout';
+import DocumentsTab from './pages/admin/DocumentsTab';
+import UsersTab from './pages/admin/UsersTab';
+import ChatsTab from './pages/admin/ChatsTab';
 import { Loader2 } from 'lucide-react';
 import ErrorBoundary from './components/ErrorBoundary';
 
@@ -37,24 +40,15 @@ export default function App() {
       <AuthProvider>
         <BrowserRouter>
           <Routes>
-          <Route path="/login" element={<AuthPage />} />
-          <Route 
-            path="/" 
-            element={
-              <ProtectedRoute>
-                <ChatDashboard />
-              </ProtectedRoute>
-            } 
-          />
-          <Route 
-            path="/admin/documents" 
-            element={
-              <ProtectedRoute requireAdmin={true}>
-                <AdminDocumentsPage />
-              </ProtectedRoute>
-            } 
-          />
-          <Route path="*" element={<Navigate to="/" replace />} />
+            <Route path="/login" element={<AuthPage />} />
+            <Route path="/" element={<ProtectedRoute><ChatDashboard /></ProtectedRoute>} />
+            <Route path="/admin" element={<ProtectedRoute requireAdmin={true}><AdminLayout /></ProtectedRoute>}>
+              <Route index element={<Navigate to="documents" replace />} />
+              <Route path="documents" element={<DocumentsTab />} />
+              <Route path="users" element={<UsersTab />} />
+              <Route path="chats" element={<ChatsTab />} />
+            </Route>
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>
       </AuthProvider>

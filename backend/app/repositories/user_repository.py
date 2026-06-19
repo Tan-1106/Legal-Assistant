@@ -43,3 +43,47 @@ class UserRepository:
         db.commit()
         db.refresh(new_user)
         return new_user
+
+    @staticmethod
+    def get_all_paginated(db: Session, skip: int = 0, limit: int = 20):
+        return db.query(User).offset(skip).limit(limit).all()
+
+    @staticmethod
+    def count(db: Session) -> int:
+        return db.query(User).count()
+
+    @staticmethod
+    def update_role(db: Session, user_id: int, role: str) -> Optional[User]:
+        user = db.query(User).filter(User.id == user_id).first()
+        if user:
+            user.role = role
+            db.commit()
+            db.refresh(user)
+        return user
+
+    @staticmethod
+    def update_status(db: Session, user_id: int, is_active: bool) -> Optional[User]:
+        user = db.query(User).filter(User.id == user_id).first()
+        if user:
+            user.is_active = is_active
+            db.commit()
+            db.refresh(user)
+        return user
+
+    @staticmethod
+    def update_password(db: Session, user_id: int, hashed_password: str) -> Optional[User]:
+        user = db.query(User).filter(User.id == user_id).first()
+        if user:
+            user.hashed_password = hashed_password
+            db.commit()
+            db.refresh(user)
+        return user
+
+    @staticmethod
+    def delete(db: Session, user_id: int) -> bool:
+        user = db.query(User).filter(User.id == user_id).first()
+        if user:
+            db.delete(user)
+            db.commit()
+            return True
+        return False
