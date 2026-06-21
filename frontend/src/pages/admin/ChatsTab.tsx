@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '../../context/auth';
 import { API_BASE_URL } from '../../config';
 import { useTranslation } from 'react-i18next';
-import { Trash2, Loader2, ChevronLeft, ChevronRight, Eye } from 'lucide-react';
+import { Trash2, Loader2, ChevronLeft, ChevronRight, Eye, Search } from 'lucide-react';
 import ConfirmDialog from '../../components/ConfirmDialog';
 
 interface ChatSessionAdmin {
@@ -20,6 +20,7 @@ interface ChatMessageAdmin {
   sources: string | null;
   created_at: string;
 }
+interface ErrorResponse { detail?: string; }
 
 export default function ChatsTab() {
   const { t } = useTranslation();
@@ -30,6 +31,9 @@ export default function ChatsTab() {
   const [pageSize] = useState(20);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [activeSearch, setActiveSearch] = useState('');
 
   const [viewSessionId, setViewSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessageAdmin[]>([]);
@@ -41,7 +45,8 @@ export default function ChatsTab() {
     setError('');
     try {
       const skip = (page - 1) * pageSize;
-      const res = await apiFetch(`${API_BASE_URL}/admin/chats/sessions?skip=${skip}&limit=${pageSize}`);
+      const searchParam = activeSearch ? `&search=${encodeURIComponent(activeSearch)}` : '';
+      const res = await apiFetch(`${API_BASE_URL}/admin/chats/sessions?skip=${skip}&limit=${pageSize}${searchParam}`);
       if (!res.ok) throw new Error('Failed to load sessions');
       const data = await res.json() as { sessions: ChatSessionAdmin[], total: number };
       setSessions(data.sessions);
@@ -51,17 +56,23 @@ export default function ChatsTab() {
     } finally {
       setIsLoading(false);
     }
-  }, [apiFetch, page, pageSize]);
+  }, [apiFetch, page, pageSize, activeSearch]);
 
   useEffect(() => {
-    void loadSessions();
+    const timer = window.setTimeout(() => void loadSessions(), 0);
+    return () => window.clearTimeout(timer);
   }, [loadSessions]);
 
   const handleDeleteSession = async () => {
     if (!deletingSession) return;
+    setNotice('');
     try {
       const res = await apiFetch(`${API_BASE_URL}/admin/chats/sessions/${deletingSession}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Failed to delete session');
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as ErrorResponse;
+        throw new Error(body.detail ?? 'Failed to delete session');
+      }
+      setNotice(t('admin.chat_deleted', 'Chat session deleted.'));
       void loadSessions();
       setDeletingSession(null);
     } catch (err) {
@@ -72,6 +83,7 @@ export default function ChatsTab() {
 
   const handleViewSession = async (sessionId: string) => {
     setViewSessionId(sessionId);
+    setMessages([]);
     setLoadingMessages(true);
     try {
       const res = await apiFetch(`${API_BASE_URL}/admin/chats/sessions/${sessionId}/messages`);
@@ -88,19 +100,28 @@ export default function ChatsTab() {
 
   const [passwordModal, setPasswordModal] = useState(false);
   const handleDeleteAllSessions = async (password: string) => {
+    setError('');
+    setNotice('');
     const res = await apiFetch(`${API_BASE_URL}/sessions/all`, {
       method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password })
     });
     if (!res.ok) {
-      const body = await res.json().catch(() => ({})) as any;
+      const body = await res.json().catch(() => ({})) as ErrorResponse;
       throw new Error(body.detail ?? 'Error');
     }
     setSessions([]);
     setTotal(0);
     setPasswordModal(false);
+    setNotice(t('admin.delete_success', 'Deleted successfully.'));
   };
 
   const totalPages = Math.ceil(total / pageSize);
+
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    setPage(1);
+    setActiveSearch(searchTerm.trim());
+  };
 
   return (
     <>
@@ -120,11 +141,30 @@ export default function ChatsTab() {
           </div>
           <div className="glass-panel p-6 flex flex-col justify-center items-center opacity-70">
             <span className="text-3xl font-bold text-text">{new Set(sessions.map(s => s.username)).size}</span>
-            <span className="text-sm text-faint uppercase tracking-wider mt-1">{t('admin.tab_users')} (Page)</span>
+            <span className="text-sm text-faint uppercase tracking-wider mt-1">{t('admin.page_users', 'Users on this page')}</span>
           </div>
         </div>
 
+        {notice && <div className="success-banner">{notice}</div>}
         {error && <div className="error-banner">{error}</div>}
+
+        <div className="flex justify-between items-center mb-4 mt-6">
+          <form onSubmit={handleSearch} className="flex gap-2 w-full max-w-md">
+            <input 
+              type="text" 
+              className="input flex-1" 
+              placeholder={t('admin.search_chats_placeholder', 'Search by username or title...')}
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+            />
+            <button type="submit" className="btn btn-primary"><Search size={16} /></button>
+            {activeSearch && (
+              <button type="button" className="btn btn-secondary" onClick={() => { setSearchTerm(''); setActiveSearch(''); setPage(1); }}>
+                {t('admin.clear_search', 'Clear')}
+              </button>
+            )}
+          </form>
+        </div>
 
         <div className="doc-table-wrap">
           <table className="doc-table">
@@ -150,7 +190,7 @@ export default function ChatsTab() {
               ) : (
                 sessions.map(s => (
                   <tr key={s.id}>
-                    <td className="text-sm text-faint font-mono">{new Date(s.created_at).toLocaleString()}</td>
+                    <td className="text-sm text-faint font-mono">{new Date(s.created_at).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' })}</td>
                     <td className="font-bold">{s.username}</td>
                     <td className="text-muted truncate max-w-sm">{s.title}</td>
                     <td className="text-right">
@@ -212,12 +252,12 @@ export default function ChatsTab() {
       {/* Messages Viewer Modal */}
       {viewSessionId && (
         <div className="dialog-backdrop" onClick={() => setViewSessionId(null)}>
-          <div className="glass-panel w-full max-w-3xl h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
-            <div className="p-4 border-b border-default flex justify-between items-center">
+          <div className="glass-panel w-full max-w-3xl h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="p-4 border-b border-default flex justify-between items-center shrink-0">
               <h3 className="font-bold text-lg">{t('admin.conversation_history')}</h3>
               <button className="btn btn-ghost px-3 py-1 text-sm" onClick={() => setViewSessionId(null)}>{t('sidebar.btn_close')}</button>
             </div>
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-6">
               {loadingMessages ? (
                 <div className="flex justify-center py-8"><Loader2 size={28} className="spin text-primary" /></div>
               ) : messages.length === 0 ? (
@@ -226,8 +266,17 @@ export default function ChatsTab() {
                 messages.map(m => (
                   <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                     <div className={`message-bubble ${m.role === 'user' ? 'user-message' : 'ai-message'}`}>
-                      <div className="font-bold text-xs mb-2 opacity-60 uppercase tracking-wider">{m.role}</div>
+                      <div className="message-meta">
+                        <span>{m.role}</span>
+                        <span>{new Date(m.created_at).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' })}</span>
+                      </div>
                       <div className="whitespace-pre-wrap text-sm leading-relaxed">{m.content}</div>
+                      {m.sources && (
+                        <details className="message-sources">
+                          <summary>{t('chat.sources_label')}</summary>
+                          <pre>{m.sources}</pre>
+                        </details>
+                      )}
                     </div>
                   </div>
                 ))
@@ -247,7 +296,7 @@ export default function ChatsTab() {
             <form onSubmit={e => {
               e.preventDefault();
               const fd = new FormData(e.currentTarget);
-              handleDeleteAllSessions(fd.get('password') as string).catch(err => alert(err.message));
+              handleDeleteAllSessions(fd.get('password') as string).catch(err => setError(err.message));
             }}>
               <div className="mb-4">
                 <label className="input-label">{t('admin.admin_pwd')}</label>

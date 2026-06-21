@@ -32,3 +32,5 @@ backend/data/
 backend/storage/
 chat_response.txt
 test_luat.txt
+
+.agents/

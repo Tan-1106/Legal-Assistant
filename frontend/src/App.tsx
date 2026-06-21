@@ -6,6 +6,7 @@ import AuthPage from './pages/AuthPage';
 import ChatDashboard from './pages/ChatDashboard';
 import AdminLayout from './pages/admin/AdminLayout';
 import DocumentsTab from './pages/admin/DocumentsTab';
+import DocumentChunksPage from './pages/admin/DocumentChunksPage';
 import UsersTab from './pages/admin/UsersTab';
 import ChatsTab from './pages/admin/ChatsTab';
 import { Loader2 } from 'lucide-react';
@@ -45,6 +46,7 @@ export default function App() {
             <Route path="/admin" element={<ProtectedRoute requireAdmin={true}><AdminLayout /></ProtectedRoute>}>
               <Route index element={<Navigate to="documents" replace />} />
               <Route path="documents" element={<DocumentsTab />} />
+              <Route path="documents/:filename/chunks" element={<DocumentChunksPage />} />
               <Route path="users" element={<UsersTab />} />
               <Route path="chats" element={<ChatsTab />} />
             </Route>

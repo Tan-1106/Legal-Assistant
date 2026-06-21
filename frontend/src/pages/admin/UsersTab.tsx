@@ -14,17 +14,19 @@ interface AdminUser {
 
 export default function UsersTab() {
   const { t } = useTranslation();
-  const { apiFetch } = useAuth();
+  const { apiFetch, user: currentUser } = useAuth();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [pageSize] = useState(20);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
 
   const [passwordModalOpen, setPasswordModalOpen] = useState<number | null>(null);
   const [newPassword, setNewPassword] = useState('');
   const [deletingUser, setDeletingUser] = useState<number | null>(null);
+  const [pendingAction, setPendingAction] = useState<{ type: 'role' | 'status'; user: AdminUser } | null>(null);
 
   const loadUsers = useCallback(async () => {
     setIsLoading(true);
@@ -44,10 +46,12 @@ export default function UsersTab() {
   }, [apiFetch, page, pageSize]);
 
   useEffect(() => {
-    void loadUsers();
+    const timer = window.setTimeout(() => void loadUsers(), 0);
+    return () => window.clearTimeout(timer);
   }, [loadUsers]);
 
   const handleUpdateRole = async (userId: number, currentRole: string) => {
+    setNotice('');
     try {
       const newRole = currentRole === 'admin' ? 'user' : 'admin';
       const res = await apiFetch(`${API_BASE_URL}/admin/users/${userId}/role`, {
@@ -55,32 +59,50 @@ export default function UsersTab() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ role: newRole }),
       });
-      if (!res.ok) throw new Error('Failed to update role');
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { detail?: string };
+        throw new Error(body.detail ?? 'Failed to update role');
+      }
+      setNotice(t('admin.user_updated', 'User updated successfully.'));
       void loadUsers();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error');
+    } finally {
+      setPendingAction(null);
     }
   };
 
   const handleUpdateStatus = async (userId: number, currentStatus: boolean) => {
+    setNotice('');
     try {
       const res = await apiFetch(`${API_BASE_URL}/admin/users/${userId}/status`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ is_active: !currentStatus }),
       });
-      if (!res.ok) throw new Error('Failed to update status');
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { detail?: string };
+        throw new Error(body.detail ?? 'Failed to update status');
+      }
+      setNotice(t('admin.user_updated', 'User updated successfully.'));
       void loadUsers();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error');
+    } finally {
+      setPendingAction(null);
     }
   };
 
   const handleDeleteUser = async () => {
     if (deletingUser === null) return;
+    setNotice('');
     try {
       const res = await apiFetch(`${API_BASE_URL}/admin/users/${deletingUser}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Failed to delete user');
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { detail?: string };
+        throw new Error(body.detail ?? 'Failed to delete user');
+      }
+      setNotice(t('admin.user_deleted', 'User deleted successfully.'));
       void loadUsers();
       setDeletingUser(null);
     } catch (err) {
@@ -92,14 +114,18 @@ export default function UsersTab() {
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!passwordModalOpen || !newPassword) return;
+    setNotice('');
     try {
       const res = await apiFetch(`${API_BASE_URL}/admin/users/${passwordModalOpen}/password`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ new_password: newPassword }),
       });
-      if (!res.ok) throw new Error('Failed to reset password');
-      alert('Password reset successfully');
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { detail?: string };
+        throw new Error(body.detail ?? 'Failed to reset password');
+      }
+      setNotice(t('admin.password_reset_success', 'Password reset successfully.'));
       setPasswordModalOpen(null);
       setNewPassword('');
     } catch (err) {
@@ -135,6 +161,7 @@ export default function UsersTab() {
           </div>
         </div>
 
+        {notice && <div className="success-banner">{notice}</div>}
         {error && <div className="error-banner">{error}</div>}
 
         <div className="doc-table-wrap">
@@ -166,21 +193,23 @@ export default function UsersTab() {
                     <td className="font-bold">{u.username}</td>
                     <td>
                       <button 
-                        onClick={() => void handleUpdateRole(u.id, u.role)}
+                        onClick={() => setPendingAction({ type: 'role', user: u })}
                         className={u.role === 'admin' ? 'badge-admin cursor-pointer' : 'badge-neutral cursor-pointer'}
-                        title="Click to toggle role"
+                        title={t('admin.toggle_role', 'Toggle role')}
+                        disabled={currentUser?.id === u.id}
                       >
                         {u.role === 'admin' && <Shield size={10} className="mr-1" />}
-                        {u.role.toUpperCase()}
+                        {u.role === 'admin' ? t('admin.role_admin') : t('admin.role_user')}
                       </button>
                     </td>
                     <td>
                       <button 
-                        onClick={() => void handleUpdateStatus(u.id, u.is_active)}
+                        onClick={() => setPendingAction({ type: 'status', user: u })}
                         className={u.is_active ? 'badge-success cursor-pointer' : 'badge-danger cursor-pointer'}
-                        title="Click to toggle status"
+                        title={t('admin.toggle_status', 'Toggle status')}
+                        disabled={currentUser?.id === u.id}
                       >
-                        {u.is_active ? 'ACTIVE' : 'BANNED'}
+                        {u.is_active ? t('admin.status_active', 'Active') : t('admin.status_banned', 'Banned')}
                       </button>
                     </td>
                     <td className="text-right">
@@ -188,7 +217,7 @@ export default function UsersTab() {
                         <button className="btn btn-secondary py-1 px-2 text-xs" onClick={() => { setPasswordModalOpen(u.id); setNewPassword(''); }} title={t('admin.reset_pwd')}>
                           <Key size={14} />
                         </button>
-                        <button className="btn btn-danger py-1 px-2 text-xs" onClick={() => setDeletingUser(u.id)} title={t('admin.btn_delete')}>
+                        <button className="btn btn-danger py-1 px-2 text-xs" onClick={() => setDeletingUser(u.id)} title={t('admin.btn_delete')} disabled={currentUser?.id === u.id}>
                           <Trash2 size={14} />
                         </button>
                       </div>
@@ -256,6 +285,30 @@ export default function UsersTab() {
           onConfirm={handleDeleteUser}
           onCancel={() => setDeletingUser(null)}
           confirmLabel={t('admin.btn_delete')}
+        />
+      )}
+
+      {pendingAction && (
+        <ConfirmDialog
+          title={pendingAction.type === 'role' ? t('admin.confirm_role_title', 'Change user role?') : t('admin.confirm_status_title', 'Change user status?')}
+          message={
+            pendingAction.type === 'role'
+              ? t('admin.confirm_role_desc', {
+                  username: pendingAction.user.username,
+                  role: pendingAction.user.role === 'admin' ? t('admin.role_user') : t('admin.role_admin'),
+                  defaultValue: `Change ${pendingAction.user.username} to ${pendingAction.user.role === 'admin' ? 'user' : 'admin'}?`,
+                })
+              : t('admin.confirm_status_desc', {
+                  username: pendingAction.user.username,
+                  status: pendingAction.user.is_active ? t('admin.status_banned', 'Banned') : t('admin.status_active', 'Active'),
+                  defaultValue: `Change status for ${pendingAction.user.username}?`,
+                })
+          }
+          onConfirm={() => pendingAction.type === 'role'
+            ? void handleUpdateRole(pendingAction.user.id, pendingAction.user.role)
+            : void handleUpdateStatus(pendingAction.user.id, pendingAction.user.is_active)}
+          onCancel={() => setPendingAction(null)}
+          confirmLabel={t('common.confirm')}
         />
       )}
     </>

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
-from typing import List
+from sqlalchemy import desc, or_
+from typing import List, Optional
 from app.db.session import get_db
 from app.models.all_models import ChatSession, ChatMessage, User
 from app.services.auth_service import get_current_admin_user
@@ -13,14 +13,23 @@ router = APIRouter(prefix="/admin/chats", tags=["Admin Chats"])
 def list_sessions(
     skip: int = 0, 
     limit: int = 20, 
+    search: Optional[str] = None,
     db: Session = Depends(get_db),
     admin_user: User = Depends(get_current_admin_user)
 ):
-    total = db.query(ChatSession).count()
+    query = db.query(ChatSession, User.username).join(User, ChatSession.user_id == User.id)
+    
+    if search:
+        query = query.filter(
+            or_(
+                User.username.ilike(f"%{search}%"),
+                ChatSession.title.ilike(f"%{search}%")
+            )
+        )
+
+    total = query.count()
     sessions = (
-        db.query(ChatSession, User.username)
-        .join(User, ChatSession.user_id == User.id)
-        .order_by(desc(ChatSession.created_at))
+        query.order_by(desc(ChatSession.created_at))
         .offset(skip)
         .limit(limit)
         .all()

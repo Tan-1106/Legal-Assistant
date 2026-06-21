@@ -24,15 +24,17 @@ router = APIRouter(prefix="/documents", tags=["Documents & RAG"])
 
 @router.get("/", status_code=200)
 def list_documents(
+    skip: int = 0,
+    limit: int = 10,
     current_admin: User = Depends(get_current_admin_user)
 ):
     """
-    List all documents currently stored on disk.
+    List all documents currently stored on disk with pagination.
     """
     DOCUMENT_EXTENSIONS = {".pdf", ".docx", ".doc", ".txt"}
     data_dir = settings.DATA_DIR
     if not os.path.exists(data_dir):
-        return []
+        return {"documents": [], "total": 0}
     files = []
     for fname in os.listdir(data_dir):
         fpath = os.path.join(data_dir, fname)
@@ -40,7 +42,9 @@ def list_documents(
         if os.path.isfile(fpath) and ext in DOCUMENT_EXTENSIONS:
             files.append({"filename": fname, "size_bytes": os.path.getsize(fpath)})
     files.sort(key=lambda f: f["filename"])
-    return files
+    total = len(files)
+    paginated_files = files[skip : skip + limit]
+    return {"documents": paginated_files, "total": total}
 
 
 @router.post("/ingest", status_code=202)
