@@ -1,9 +1,9 @@
-from fastapi            import APIRouter
-from app.api.auth       import router as auth_router
-from app.api.sessions   import router as session_router
-from app.api.documents  import router as documents_router
-from app.api.admin_users import router as admin_users_router
-from app.api.admin_chats import router as admin_chats_router
+from fastapi                import APIRouter
+from app.api.auth           import router as auth_router
+from app.api.sessions       import router as session_router
+from app.api.documents      import router as documents_router
+from app.api.admin_users    import router as admin_users_router
+from app.api.admin_chats    import router as admin_chats_router
 
 api_router = APIRouter()
 

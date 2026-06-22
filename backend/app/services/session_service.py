@@ -1,4 +1,5 @@
 import json
+from enum                                   import Enum
 from typing                                 import List, Dict
 from sqlalchemy.orm                         import Session
 from fastapi                                import HTTPException, status
@@ -11,6 +12,13 @@ from app.repositories.message_repository    import MessageRepository
 from app.logger                             import get_logger
 
 logger = get_logger(__name__)
+
+class ChatIntent(str, Enum):
+    LEGAL_QA = "LEGAL_QA"
+    ASSISTANT_META = "ASSISTANT_META"
+    GREETING = "GREETING"
+    OFF_TOPIC = "OFF_TOPIC"
+    UNCLEAR = "UNCLEAR"
 
 class SessionService:
     """
@@ -168,8 +176,78 @@ class SessionService:
             return
 
         try:
-            # 3. Retrieve source nodes manually to inject IDs
-            source_nodes = await retriever.aretrieve(request.question)
+            from llama_index.core.base.llms.types import ChatMessage, MessageRole
+            from app.services.ai_logic import LlamaIndexSettings
+            import re
+            import unicodedata
+
+            def _normalize_text(text: str) -> str:
+                normalized = unicodedata.normalize("NFKD", text.lower())
+                return "".join(ch for ch in normalized if not unicodedata.combining(ch))
+
+            def _classify_question_sync() -> ChatIntent:
+                prompt = (
+                    "You are an intent router, not an answering assistant.\n"
+                    "Classify the user's message and return exactly one label:\n"
+                    "LEGAL_QA: asks for Vietnamese legal information, rights, duties, penalties, "
+                    "procedures, contracts, disputes, regulations, or legal analysis.\n"
+                    "ASSISTANT_META: asks about the assistant, its memory, chat/session history, "
+                    "capabilities, limitations, data sources, or how it works.\n"
+                    "GREETING: greeting, thanks, goodbye, or small talk without a task.\n"
+                    "OFF_TOPIC: asks for non-legal content such as cooking, programming, math, "
+                    "sports, entertainment, health, or general knowledge.\n"
+                    "UNCLEAR: ambiguous message where the user intent is not clear.\n\n"
+                    "Do not answer the user. Do not explain. Return only the label.\n"
+                    f"User message: {request.question}"
+                )
+                router_llm = getattr(LlamaIndexSettings, 'router_llm', LlamaIndexSettings.llm)
+                response = router_llm.complete(prompt)
+                normalized_label = _normalize_text(response.text).upper()
+                normalized_label = normalized_label.replace("```", "").strip()
+
+                for intent in ChatIntent:
+                    if intent.value in normalized_label:
+                        return intent
+
+                if "TRO LY" in normalized_label or "GHI NHO" in normalized_label or "SESSION" in normalized_label:
+                    return ChatIntent.ASSISTANT_META
+                if "CHAO" in normalized_label or "CAM ON" in normalized_label:
+                    return ChatIntent.GREETING
+                if (
+                    "NGOAI" in normalized_label
+                    or "KHONG LIEN QUAN" in normalized_label
+                    or "KHONG PHAI" in normalized_label
+                ):
+                    return ChatIntent.OFF_TOPIC
+                if "PHAP" in normalized_label or "LUAT" in normalized_label:
+                    return ChatIntent.LEGAL_QA
+                return ChatIntent.UNCLEAR
+
+            def _fallback_answer(intent: ChatIntent) -> str:
+                if intent == ChatIntent.OFF_TOPIC:
+                    return "Tôi chỉ hỗ trợ các câu hỏi liên quan đến pháp luật Việt Nam."
+                if intent == ChatIntent.UNCLEAR:
+                    return "Bạn có thể nói rõ hơn bạn muốn hỏi vấn đề pháp lý nào không?"
+                if intent == ChatIntent.ASSISTANT_META:
+                    return "Tôi có thể sử dụng lịch sử trong phiên trò chuyện hiện tại để giữ mạch trao đổi, nhưng phạm vi hỗ trợ chính của tôi là pháp luật Việt Nam."
+                if intent == ChatIntent.GREETING:
+                    return "Xin chào, tôi có thể hỗ trợ bạn các câu hỏi liên quan đến pháp luật Việt Nam."
+                return "Rất tiếc, tôi chưa tìm thấy quy định cụ thể về vấn đề này trong hệ thống."
+
+            def _is_empty_model_response(text: str) -> bool:
+                return text.strip() in ("", "{}", "[]", "null")
+
+            try:
+                question_type = await loop.run_in_executor(None, _classify_question_sync)
+            except Exception as classify_err:
+                logger.warning(f"Question classification failed, defaulting to UNCLEAR: {classify_err}")
+                question_type = ChatIntent.UNCLEAR
+
+            # 3. Retrieve source nodes only for legal questions. Greetings/off-topic prompts
+            # must not enter Ollama json_mode, otherwise the model may emit "{}".
+            source_nodes = []
+            if question_type == ChatIntent.LEGAL_QA:
+                source_nodes = await retriever.aretrieve(request.question)
             
             context_str = ""
             for i, node in enumerate(source_nodes, 1):
@@ -221,11 +299,21 @@ class SessionService:
 
             === CƠ SỞ DỮ LIỆU PHÁP LUẬT ===
             {context_str}"""
-            
 
-            from llama_index.core.base.llms.types import ChatMessage, MessageRole
-            from app.services.ai_logic import LlamaIndexSettings
-            import re
+            if question_type != ChatIntent.LEGAL_QA:
+                CUSTOM_SYSTEM_PROMPT = f"""You are a Vietnamese legal assistant.
+
+                Current intent: {question_type.value}
+
+                Answer in Vietnamese plain text. Do not use JSON.
+                Do not mention documents, retrieved context, sources, SYS tags, or legal database snippets.
+
+                Intent handling:
+                - ASSISTANT_META: answer briefly about your capabilities, memory within the current chat session, limits, or how you work.
+                - GREETING: respond naturally and briefly.
+                - OFF_TOPIC: politely refuse and state that you only support Vietnamese legal questions.
+                - UNCLEAR: ask the user to clarify the Vietnamese legal issue they want help with."""
+            
 
             messages = [ChatMessage(role=MessageRole.SYSTEM, content=CUSTOM_SYSTEM_PROMPT)]
             for msg in history:
@@ -249,8 +337,9 @@ class SessionService:
                 logger.info("📄 [AI Logic] Không tìm thấy đoạn văn bản context phù hợp nào để gửi đến LLM.")
 
             # 4. Stream tokens asynchronously
-            # Use json_mode LLM for legal Q&A (has sources), plain LLM for greetings/off-topic
-            active_llm = getattr(LlamaIndexSettings, 'chat_llm', LlamaIndexSettings.llm) if source_nodes else LlamaIndexSettings.llm
+            # Use json_mode LLM for legal Q&A with retrieved sources only.
+            # Plain LLM is required for greetings/off-topic responses.
+            active_llm = getattr(LlamaIndexSettings, 'chat_llm', LlamaIndexSettings.llm) if question_type == ChatIntent.LEGAL_QA and source_nodes else LlamaIndexSettings.llm
             response_gen = await active_llm.astream_chat(messages)
             
             accumulated_json = ""
@@ -345,6 +434,8 @@ class SessionService:
                 # Plain text response (greetings, off-topic) — strip any SYS tags and emit remainder
                 plain = _SYS_COMPLETE_RE.sub('', accumulated_json.strip())
                 plain = _SYS_PARTIAL_RE.sub('', plain)
+                if _is_empty_model_response(plain):
+                    plain = _fallback_answer(question_type)
                 final_answer = plain
                 if len(final_answer) > len(extracted_answer):
                     delta = final_answer[len(extracted_answer):]
@@ -353,34 +444,39 @@ class SessionService:
             # Safety net: strip any leaked SYS tags from the final saved answer
             final_answer = _SYS_COMPLETE_RE.sub('', final_answer)
             final_answer = _SYS_PARTIAL_RE.sub('', final_answer)
+            if _is_empty_model_response(final_answer):
+                final_answer = _fallback_answer(question_type)
 
             # 5. Extract used_sources and filter
             used_sources = []
-            try:
-                clean_json = accumulated_json.strip()
-                if not clean_json:
-                    raise ValueError("Empty response from model")
-                if clean_json.startswith("```json"):
-                    clean_json = clean_json[7:]
-                if clean_json.endswith("```"):
-                    clean_json = clean_json[:-3]
+            if question_type != ChatIntent.LEGAL_QA or not source_nodes:
+                used_sources = []
+            else:
+                try:
+                    clean_json = accumulated_json.strip()
+                    if not clean_json:
+                        raise ValueError("Empty response from model")
+                    if clean_json.startswith("```json"):
+                        clean_json = clean_json[7:]
+                    if clean_json.endswith("```"):
+                        clean_json = clean_json[:-3]
 
-                final_data = json.loads(clean_json.strip(), strict=False)
-                used_sources = final_data.get("used_sources", [])
-                if not isinstance(used_sources, list):
-                    used_sources = []
-            except Exception as e:
-                logger.warning(f"Could not parse JSON from LLM response: {e}. Falling back to source extraction.")
-                import re
-                match = re.search(r'"used_sources"\s*:\s*\[(.*?)\]', accumulated_json, re.DOTALL)
-                if match:
-                    numbers_str = match.group(1)
-                    used_sources = [int(n.strip()) for n in numbers_str.split(',') if n.strip().isdigit()]
-                elif final_answer and source_nodes:
-                    # Model answered using retrieved context but didn't return JSON format.
-                    # Show all retrieved sources — better to show all than none.
-                    used_sources = list(range(1, len(source_nodes) + 1))
-                    logger.warning(f"LLM ignored JSON format. Showing all {len(source_nodes)} retrieved sources as fallback.")
+                    final_data = json.loads(clean_json.strip(), strict=False)
+                    used_sources = final_data.get("used_sources", [])
+                    if not isinstance(used_sources, list):
+                        used_sources = []
+                except Exception as e:
+                    logger.warning(f"Could not parse JSON from LLM response: {e}. Falling back to source extraction.")
+                    import re
+                    match = re.search(r'"used_sources"\s*:\s*\[(.*?)\]', accumulated_json, re.DOTALL)
+                    if match:
+                        numbers_str = match.group(1)
+                        used_sources = [int(n.strip()) for n in numbers_str.split(',') if n.strip().isdigit()]
+                    elif final_answer and source_nodes:
+                        # Model answered using retrieved context but didn't return JSON format.
+                        # Show all retrieved sources — better to show all than none.
+                        used_sources = list(range(1, len(source_nodes) + 1))
+                        logger.warning(f"LLM ignored JSON format. Showing all {len(source_nodes)} retrieved sources as fallback.")
 
             seen_sources = set()
             filtered_sources = []

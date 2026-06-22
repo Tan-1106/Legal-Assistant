@@ -2,11 +2,10 @@ import hashlib
 import json
 import secrets
 import uuid
-from dataclasses import dataclass
-from typing import Optional
-
-from app.config import settings
-from app.db.redis_store import get_redis_client
+from dataclasses            import dataclass
+from typing                 import Optional
+from app.config             import settings
+from app.db.redis_store     import get_redis_client
 
 
 _ROTATE_REFRESH_SCRIPT = """

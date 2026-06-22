@@ -1,13 +1,11 @@
 import uuid
-from typing import Any, Dict, Optional
-
-from rq import Queue, Retry
-from rq.exceptions import NoSuchJobError
-from rq.job import Job
-
-from app.config import settings
+from typing             import Any, Dict, Optional
+from rq                 import Queue, Retry
+from rq.exceptions      import NoSuchJobError
+from rq.job             import Job
+from app.config         import settings
 from app.db.redis_store import get_rq_redis_client
-from app.logger import get_logger
+from app.logger         import get_logger
 
 logger = get_logger(__name__)
 

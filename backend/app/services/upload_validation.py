@@ -1,12 +1,10 @@
 import os
 import zipfile
 import codecs
-from dataclasses import dataclass
-from typing import BinaryIO
-
-from fastapi import HTTPException, UploadFile, status
-
-from app.config import settings
+from dataclasses    import dataclass
+from typing         import BinaryIO
+from fastapi        import HTTPException, UploadFile, status
+from app.config     import settings
 
 
 @dataclass(frozen=True)

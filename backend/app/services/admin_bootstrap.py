@@ -1,7 +1,6 @@
-from sqlalchemy.orm import Session
-
-from app.models.all_models import User
-from app.services.auth_service import get_password_hash, verify_password
+from sqlalchemy.orm             import Session
+from app.models.all_models      import User
+from app.services.auth_service  import get_password_hash, verify_password
 
 
 def ensure_super_admin(db: Session, username: str, password: str) -> None:

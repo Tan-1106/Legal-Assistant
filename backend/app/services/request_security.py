@@ -1,6 +1,6 @@
 import secrets
-from collections.abc import Collection
-from typing import Optional
+from collections.abc    import Collection
+from typing             import Optional
 
 
 def is_origin_allowed(origin: Optional[str], allowed_origins: Collection[str]) -> bool:

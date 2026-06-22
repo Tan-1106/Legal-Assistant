@@ -8,7 +8,6 @@ from app.config                     import settings
 from app.models.all_models          import User
 from app.services.auth_service      import get_current_user, get_current_admin_user
 from app.services.rag_pipeline      import delete_document, delete_all_documents
-from app.db.session                 import get_db
 from app.services.task_service      import TaskTrackerService, get_task_service
 from app.services.rate_limit        import RateLimit, RateLimiter, get_rate_limiter
 from app.services.upload_validation import (

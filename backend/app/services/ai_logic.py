@@ -5,10 +5,10 @@ import warnings
 import nest_asyncio
 import transformers
 from app.config                             import settings
+from app.logger                             import get_logger
 from llama_index.llms.ollama                import Ollama
 from llama_index.core                       import Settings as LlamaIndexSettings
 from llama_index.embeddings.huggingface     import HuggingFaceEmbedding
-from app.logger                               import get_logger
 
 logger = get_logger(__name__)
 
@@ -52,6 +52,14 @@ def initialize_ai():
         base_url=settings.OLLAMA_BASE_URL,
         request_timeout=120.0,
         system=_system_prompt,
+    )
+
+    # 1a.1 Intent router LLM — no legal-answering system prompt, so it can return
+    # strict classifier labels without being biased by the assistant persona.
+    LlamaIndexSettings.router_llm = Ollama(  # type: ignore[attr-defined]
+        model=settings.OLLAMA_MODEL,
+        base_url=settings.OLLAMA_BASE_URL,
+        request_timeout=60.0,
     )
 
     # 1b. JSON-mode LLM — enforces valid JSON output at the Ollama API level.

@@ -1,11 +1,9 @@
 import hashlib
 import time
-from dataclasses import dataclass
-
-from fastapi import HTTPException, Request, status
-
-from app.config import settings
-from app.db.redis_store import get_redis_client
+from dataclasses            import dataclass
+from fastapi                import HTTPException, Request, status
+from app.config             import settings
+from app.db.redis_store     import get_redis_client
 
 
 _RATE_LIMIT_SCRIPT = """
