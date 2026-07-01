@@ -237,12 +237,17 @@ def delete_all_documents_endpoint(
 @router.get("/{filename}/preview")
 def preview_document(
     filename: str,
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     Get raw text preview of a document.
     """
+    filename = os.path.basename(filename)
     file_path = os.path.join(settings.DATA_DIR, filename)
+    data_dir = os.path.abspath(settings.DATA_DIR)
+    if os.path.commonpath([data_dir, os.path.abspath(file_path)]) != data_dir:
+        raise HTTPException(status_code=400, detail="Invalid file path")
+
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="File not found")
         

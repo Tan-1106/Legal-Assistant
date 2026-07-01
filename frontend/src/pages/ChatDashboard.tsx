@@ -17,6 +17,14 @@ interface Message {
   failed?: boolean;
 }
 
+interface SelectedDocument {
+  filename: string;
+  url: string;
+  isPdf: boolean;
+  text?: string;
+  isLoading?: boolean;
+}
+
 export default function ChatDashboard() {
   const { t } = useTranslation();
   const { apiFetch } = useAuth();
@@ -27,8 +35,7 @@ export default function ChatDashboard() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [sessionsVersion, setSessionsVersion] = useState(0);
-  const [selectedPdfUrl, setSelectedPdfUrl] = useState<string | null>(null);
-  const [selectedPdfTitle, setSelectedPdfTitle] = useState<string>('');
+  const [selectedDocument, setSelectedDocument] = useState<SelectedDocument | null>(null);
   const [pdfPaneWidth, setPdfPaneWidth] = useState<number>(500);
   const [isDraggingPdf, setIsDraggingPdf] = useState(false);
   const isDraggingPdfRef = useRef(false);
@@ -206,15 +213,35 @@ export default function ChatDashboard() {
     window.addEventListener('mouseup', handleMouseUp);
   }, []);
 
-  const handleOpenSource = (filename: string, pageLabel: string | number) => {
+  const handleOpenSource = async (filename: string, pageLabel: string | number) => {
     let docUrl = `${API_BASE_URL}/documents/file/${encodeURIComponent(filename)}`;
     if (filename.toLowerCase().endsWith('.pdf')) {
       if (pageLabel && pageLabel !== 'N/A') {
         docUrl += `#page=${pageLabel}`;
       }
-      setSelectedPdfUrl(docUrl);
-      setSelectedPdfTitle(filename);
-    } else {
+      setSelectedDocument({ filename, url: docUrl, isPdf: true });
+      return;
+    }
+
+    setSelectedDocument({ filename, url: docUrl, isPdf: false, isLoading: true });
+    try {
+      const res = await apiFetch(`${API_BASE_URL}/documents/${encodeURIComponent(filename)}/preview`);
+      if (!res.ok) throw new Error(`Failed to load preview (${res.status})`);
+      const data = await res.json() as { text?: string };
+      setSelectedDocument({
+        filename,
+        url: docUrl,
+        isPdf: false,
+        text: data.text ?? '',
+      });
+    } catch (previewError) {
+      console.error(previewError);
+      setSelectedDocument({
+        filename,
+        url: docUrl,
+        isPdf: false,
+        text: 'Không thể xem trước tài liệu này. Bạn vẫn có thể mở tài liệu ở tab mới.',
+      });
       const previewWindow = window.open(docUrl, '_blank', 'noopener,noreferrer');
       if (!previewWindow) {
         setError(t('chat.err_blocked'));
@@ -236,7 +263,7 @@ export default function ChatDashboard() {
               <button
                 key={`${filename}-${index}`}
                 type="button"
-                onClick={() => handleOpenSource(filename, pageLabel)}
+                onClick={() => void handleOpenSource(filename, pageLabel)}
                 disabled={!filename}
                 className="source-card"
               >
@@ -400,8 +427,8 @@ export default function ChatDashboard() {
         </div>
       </div>
 
-      {/* PDF Viewer Pane */}
-      {selectedPdfUrl && (
+      {/* Document Viewer Pane */}
+      {selectedDocument && (
         <div 
           className="pdf-viewer-pane" 
           style={{ width: pdfPaneWidth, transition: isDraggingPdf ? 'none' : undefined }}
@@ -411,15 +438,15 @@ export default function ChatDashboard() {
             onMouseDown={handleMouseDownPdfResize} 
           />
           <div className="pdf-header">
-            <span className="pdf-title" title={selectedPdfTitle}>{selectedPdfTitle}</span>
+            <span className="pdf-title" title={selectedDocument.filename}>{selectedDocument.filename}</span>
             <div className="pdf-actions">
               <button
                 type="button"
                 className="btn btn-ghost icon-button"
                 aria-label={t('chat.btn_open_new')}
                 onClick={() => {
-                  window.open(selectedPdfUrl, '_blank', 'noopener,noreferrer');
-                  setSelectedPdfUrl(null);
+                  window.open(selectedDocument.url, '_blank', 'noopener,noreferrer');
+                  setSelectedDocument(null);
                 }}
               >
                 <ExternalLink size={16} />
@@ -428,19 +455,32 @@ export default function ChatDashboard() {
                 type="button"
                 className="btn btn-ghost icon-button"
                 aria-label={t('chat.btn_close_doc')}
-                onClick={() => setSelectedPdfUrl(null)}
+                onClick={() => setSelectedDocument(null)}
               >
                 <X size={16} />
               </button>
             </div>
           </div>
-          <iframe
-            key={selectedPdfUrl}
-            src={selectedPdfUrl}
-            className="pdf-iframe"
-            title={t('chat.pdf_viewer_title')}
-            style={{ pointerEvents: isDraggingPdf ? 'none' : 'auto' }}
-          />
+          {selectedDocument.isPdf ? (
+            <iframe
+              key={selectedDocument.url}
+              src={selectedDocument.url}
+              className="pdf-iframe"
+              title={t('chat.pdf_viewer_title')}
+              style={{ pointerEvents: isDraggingPdf ? 'none' : 'auto' }}
+            />
+          ) : (
+            <div className="document-text-preview">
+              {selectedDocument.isLoading ? (
+                <div className="flex items-center justify-center h-full gap-3 text-muted">
+                  <Loader2 size={20} className="spin" />
+                  <span className="text-sm">Đang tải bản xem trước...</span>
+                </div>
+              ) : (
+                selectedDocument.text || 'Tài liệu này không có nội dung xem trước.'
+              )}
+            </div>
+          )}
           {/* Invisible overlay to catch fast mouse movements over the iframe */}
           {isDraggingPdf && (
             <div style={{ position: 'fixed', inset: 0, zIndex: 9999, cursor: 'col-resize' }} />
